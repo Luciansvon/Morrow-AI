@@ -1,11 +1,9 @@
-const path = require("path");
-
 module.exports = {
   apps: [
     {
       name: "morrow",
       cwd: __dirname,
-      script: path.join("src", "main.py"),
+      script: "morrow_runtime.py",
       interpreter:
         process.env.MORROW_PYTHON ||
         (process.platform === "win32" ? "python" : "python3"),
