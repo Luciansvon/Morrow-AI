@@ -10,6 +10,7 @@ INTERNAL_ACTIONS: set[str] = {
     "evaluate_risk",
     "propose_decision",
     "query_memory",
+    "calculate",
 }
 
 EXTERNAL_ACTIONS: set[str] = {
@@ -20,6 +21,7 @@ EXTERNAL_ACTIONS: set[str] = {
     "execute_transaction",
     "modify_external_account",
     "destructive_external_write",
+    "browser_commit_action",
 }
 
 

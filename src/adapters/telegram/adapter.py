@@ -157,5 +157,27 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
     async def send_message(self, group_id: str, text: str, from_role: RoleID | None = None, reply_to_message_id: str | None = None) -> str:
         return await telegram_sender.send_message(group_id, text, from_role, reply_to_message_id)
 
+    async def begin_activity(
+        self,
+        group_id: str,
+        text: str,
+        from_role: RoleID,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        return await telegram_sender.send_activity(
+            group_id,
+            text,
+            from_role,
+            reply_to_message_id,
+        )
+
+    async def end_activity(
+        self,
+        group_id: str,
+        activity_id: str | None,
+        from_role: RoleID,
+    ) -> None:
+        await telegram_sender.delete_activity(group_id, activity_id, from_role)
+
     async def send_approval_prompt(self, group_id: str, approval_id: str, action_description: str, parameters: dict[str, Any]) -> None:
         await telegram_sender.send_approval_prompt(group_id, approval_id, action_description, parameters)

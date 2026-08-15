@@ -71,7 +71,16 @@ class Settings(BaseSettings):
     max_router_output_tokens: int = Field(default=256, gt=0, alias="MAX_ROUTER_OUTPUT_TOKENS")
     max_memory_judge_output_tokens: int = Field(default=768, gt=0, alias="MAX_MEMORY_JUDGE_OUTPUT_TOKENS")
     max_vision_output_tokens: int = Field(default=1200, gt=0, alias="MAX_VISION_OUTPUT_TOKENS")
+    max_tool_rounds: int = Field(default=4, gt=0, le=8, alias="MAX_TOOL_ROUNDS")
     openrouter_timeout_seconds: float = Field(default=180.0, gt=0, alias="OPENROUTER_TIMEOUT_SECONDS")
+
+    web_search_enabled: bool = Field(default=True, alias="WEB_SEARCH_ENABLED")
+    web_search_max_total_results: int = Field(default=8, gt=0, le=25, alias="WEB_SEARCH_MAX_TOTAL_RESULTS")
+    web_search_context_size: str = Field(default="medium", alias="WEB_SEARCH_CONTEXT_SIZE")
+    web_fetch_enabled: bool = Field(default=True, alias="WEB_FETCH_ENABLED")
+    web_fetch_max_content_tokens: int = Field(default=20_000, gt=0, le=100_000, alias="WEB_FETCH_MAX_CONTENT_TOKENS")
+    datetime_tool_enabled: bool = Field(default=True, alias="DATETIME_TOOL_ENABLED")
+    morrow_timezone: str = Field(default="Asia/Jakarta", alias="MORROW_TIMEZONE")
 
     budget_routing_per_message: float = Field(default=0.002, ge=0, alias="BUDGET_ROUTING_PER_MESSAGE")
     budget_normal_task: float = Field(default=0.05, ge=0, alias="BUDGET_NORMAL_TASK")

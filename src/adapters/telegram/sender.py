@@ -63,6 +63,44 @@ class TelegramSender:
         return last_id
 
     @staticmethod
+    async def send_activity(
+        group_id: str,
+        text: str,
+        from_role: RoleID,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        bot = bot_registry.get_bot(from_role)
+        if not bot:
+            return None
+        try:
+            if hasattr(bot, "send_chat_action"):
+                await bot.send_chat_action(chat_id=int(group_id), action="typing")
+        except Exception:
+            pass
+        try:
+            return await TelegramSender.send_message(
+                group_id,
+                text,
+                from_role,
+                reply_to_message_id,
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    async def delete_activity(group_id: str, activity_id: str | None, from_role: RoleID) -> None:
+        if not activity_id or not str(activity_id).lstrip("-").isdigit():
+            return
+        bot = bot_registry.get_bot(from_role)
+        if not bot or not hasattr(bot, "delete_message"):
+            return
+        try:
+            await bot.delete_message(chat_id=int(group_id), message_id=int(activity_id))
+        except Exception:
+            # Activity UI must never make the actual answer fail.
+            return
+
+    @staticmethod
     async def send_approval_prompt(
         group_id: str,
         approval_id: str,

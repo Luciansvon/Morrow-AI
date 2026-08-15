@@ -1,30 +1,42 @@
-"""Zero-token social responses dengan gaya bicara per role."""
+"""Zero-token fast social responses. Rich banter is handled by persona-aware LLM runtime."""
+
+import re
 
 from src.core.types import RoleID
 
+FAST_SOCIAL_RE = re.compile(
+    r"^\s*(halo|hai|hey|hei|hola|pagi|siang|sore|malam|selamat\s+(pagi|siang|sore|malam))"
+    r"([\s,!?.]*(semua|semuanya|tim|team|guys|teman-teman|kalian))?[\s,!?.]*$",
+    re.IGNORECASE,
+)
+
 SOCIAL_RESPONSES = {
     RoleID.MANAGER: {
-        "default": "Halo Bos. Manager standby, siap rapihin prioritas dan langkah berikutnya.",
-        "pagi": "Pagi Bos. Manager siap rapihin prioritas biar arah kerja hari ini jelas.",
-        "siang": "Siang Bos. Manager standby, kita cek progres dan beresin yang paling penting dulu.",
-        "sore": "Sore Bos. Manager siap review progres dan kunci next step-nya.",
-        "malam": "Malam Bos. Manager standby, kita rapihin sisa kerjaan tanpa bikin langkah baru berantakan.",
+        "default": "Ada, Bos. Kenapa?",
+        "pagi": "Pagi, Bos. Gue ada. Mau beresin apa dulu?",
+        "siang": "Siang. Ada apa, Bos?",
+        "sore": "Sore, Bos. Masih nyala kok wkwk.",
+        "malam": "Malam. Gue ada, santai aja.",
     },
     RoleID.MARKETING: {
-        "default": "Halo Bos. Marketing hadir, siap cari angle, ide, atau copy yang paling nendang.",
-        "pagi": "Pagi Bos. Marketing siap cari angle yang bikin orang berhenti scroll.",
-        "siang": "Siang Bos. Marketing standby, siap poles pesan biar lebih kena ke target.",
-        "sore": "Sore Bos. Marketing siap bedah hasil dan cari cara biar campaign-nya makin ngangkat.",
-        "malam": "Malam Bos. Marketing masih standby, siap matengin ide sebelum dilempar ke audience.",
+        "default": "hadir 😭 ada apaan?",
+        "pagi": "pagiii, hadir. ada yang mau dibedah?",
+        "siang": "siang, gue ada. apaan nih?",
+        "sore": "soreee. masih hidup, tenang 😭",
+        "malam": "malam. masih online, sayangnya 😭",
     },
     RoleID.ADVISOR: {
-        "default": "Halo Bos. Advisor standby, siap bedah risiko dan bantu pilih langkah paling aman.",
-        "pagi": "Pagi Bos. Advisor siap cek risiko dulu sebelum kita gas.",
-        "siang": "Siang Bos. Advisor standby, siap timbang opsi dan dampaknya satu per satu.",
-        "sore": "Sore Bos. Advisor siap review keputusan hari ini dan tandai celah yang masih rawan.",
-        "malam": "Malam Bos. Advisor standby, siap bantu pastikan keputusan besok nggak nyisain risiko tersembunyi.",
+        "default": "Ada. Mau bahas apa?",
+        "pagi": "Pagi. Saya ada, mau cek apa dulu?",
+        "siang": "Siang. Ada yang perlu ditimbang?",
+        "sore": "Sore. Masih ada, belum pensiun rupanya.",
+        "malam": "Malam. Saya masih di sini, mau bahas apa?",
     },
 }
+
+
+def is_fast_social(text: str = "") -> bool:
+    return bool(FAST_SOCIAL_RE.match(text or ""))
 
 
 def social_response(role: RoleID, text: str = "") -> str:
