@@ -22,6 +22,8 @@ class MemoryService:
     ) -> MemoryItem:
         if scope == MemoryScope.ROLE and role_id is None:
             raise ValueError("role_id wajib untuk role memory")
+        if scope == MemoryScope.SHARED and role_id is not None:
+            raise ValueError("role_id tidak boleh diisi untuk shared memory")
         role_val = role_id.value if role_id else None
 
         async with db.transaction() as conn:
