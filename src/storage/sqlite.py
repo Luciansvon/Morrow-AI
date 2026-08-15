@@ -1,5 +1,6 @@
 """SQLite async manager dengan WAL, migrasi ringan, transaksi, dan integrity check."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -15,6 +16,7 @@ class DatabaseManager:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or settings.db_path
         self._connection: aiosqlite.Connection | None = None
+        self._transaction_lock = asyncio.Lock()
 
     @classmethod
     def get_instance(cls, db_path: str | None = None) -> "DatabaseManager":
@@ -50,9 +52,7 @@ class DatabaseManager:
         return bool(row)
 
     async def _migrate_legacy_schema(self) -> None:
-        """Upgrade database v0.2 lama tanpa membuang data yang sudah tersimpan."""
         conn = await self.connect()
-
         if await self._table_exists("memories"):
             cols = await self._table_columns("memories")
             if "group_id" not in cols:
@@ -101,7 +101,6 @@ class DatabaseManager:
             schema_path = str(Path(__file__).parent / "schema.sql")
         with open(schema_path, "r", encoding="utf-8") as f:
             await conn.executescript(f.read())
-
         roles = [
             ("manager", "Manager", "Koordinasi tim, prioritas, dan manajemen tugas"),
             ("marketing", "Marketing", "Strategi kampanye, riset pasar, dan konten kreatif"),
@@ -115,14 +114,15 @@ class DatabaseManager:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[aiosqlite.Connection]:
-        conn = await self.connect()
-        await conn.execute("BEGIN IMMEDIATE")
-        try:
-            yield conn
-            await conn.commit()
-        except Exception:
-            await conn.rollback()
-            raise
+        async with self._transaction_lock:
+            conn = await self.connect()
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+                await conn.commit()
+            except Exception:
+                await conn.rollback()
+                raise
 
     async def execute(self, query: str, params: tuple = ()) -> aiosqlite.Cursor:
         conn = await self.connect()

@@ -1,0 +1,49 @@
+name: ChatGPT Full Fix CI
+
+on:
+  push:
+    branches:
+      - chatgpt/full-fix-20260815
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Ruff
+        run: ruff check .
+      - name: Tests
+        run: pytest -q
+      - name: Stage clean source package
+        if: success()
+        run: |
+          mkdir -p /tmp/Morrow-AI-fixed
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='data' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.ruff_cache' \
+            ./ /tmp/Morrow-AI-fixed/
+      - name: Upload verified full source
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morrow-AI-fixed
+          path: /tmp/Morrow-AI-fixed
+          include-hidden-files: true
+          retention-days: 7
