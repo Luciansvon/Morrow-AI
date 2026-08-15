@@ -11,6 +11,16 @@ INTERNAL_ACTIONS: set[str] = {
     "propose_decision",
     "query_memory",
     "calculate",
+    "morrow_tool_search",
+    "browser_open",
+    "browser_snapshot",
+    "browser_screenshot",
+    "browser_fill",
+    "browser_type",
+    "browser_select",
+    "browser_check",
+    "browser_uncheck",
+    "browser_scroll",
 }
 
 EXTERNAL_ACTIONS: set[str] = {
@@ -22,6 +32,8 @@ EXTERNAL_ACTIONS: set[str] = {
     "modify_external_account",
     "destructive_external_write",
     "browser_commit_action",
+    "browser_click",
+    "browser_press",
 }
 
 
