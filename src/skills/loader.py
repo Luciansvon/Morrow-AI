@@ -1,56 +1,45 @@
-"""Parser dan pemuat file SKILL.md modular."""
+"""Parser SKILL.md ringan dengan frontmatter aman dan default immutable."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SkillDefinition(BaseModel):
     name: str
-    description: str
-    eligible_roles: list[str]  # ['manager', 'marketing', 'advisor'] atau ['*']
-    instructions: str
-    tools: list[str] = []
+    description: str = ""
+    eligible_roles: list[str] = Field(default_factory=lambda: ["*"])
+    instructions: str = ""
+    tools: list[str] = Field(default_factory=list)
+    triggers: list[str] = Field(default_factory=list)
 
 
 class SkillLoader:
-    """Pemuat keahlian modular dari berkas teks / markdown."""
+    @staticmethod
+    def _parse_list(value: str) -> list[str]:
+        value = value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            value = value[1:-1]
+        return [item.strip().strip("'\"") for item in value.split(",") if item.strip()]
 
     @staticmethod
     def load_skill_from_text(content: str) -> SkillDefinition:
-        lines = content.strip().split("\n")
-        name = "default_skill"
-        desc = ""
-        eligible_roles = ["*"]
-        instructions = content
-
-        # Parsing YAML frontmatter sederhana jika ada
+        lines = content.strip().splitlines()
+        meta: dict[str, str] = {}
+        body = content.strip()
         if lines and lines[0].strip() == "---":
-            yaml_lines = []
-            body_lines = []
-            in_yaml = True
-            for line in lines[1:]:
-                if in_yaml and line.strip() == "---":
-                    in_yaml = False
-                    continue
-                if in_yaml:
-                    yaml_lines.append(line)
-                else:
-                    body_lines.append(line)
-
-            instructions = "\n".join(body_lines).strip()
-            for yline in yaml_lines:
-                if yline.startswith("name:"):
-                    name = yline.split("name:", 1)[1].strip()
-                elif yline.startswith("description:"):
-                    desc = yline.split("description:", 1)[1].strip()
-                elif yline.startswith("eligible_roles:"):
-                    roles_str = yline.split("eligible_roles:", 1)[1].strip()
-                    eligible_roles = [r.strip() for r in roles_str.replace("[", "").replace("]", "").split(",") if r.strip()]
-
+            end = next((i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---"), None)
+            if end is not None:
+                for line in lines[1:end]:
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        meta[key.strip()] = value.strip()
+                body = "\n".join(lines[end + 1 :]).strip()
         return SkillDefinition(
-            name=name,
-            description=desc,
-            eligible_roles=eligible_roles,
-            instructions=instructions,
+            name=meta.get("name", "default_skill"),
+            description=meta.get("description", ""),
+            eligible_roles=SkillLoader._parse_list(meta.get("eligible_roles", "*")) or ["*"],
+            tools=SkillLoader._parse_list(meta.get("tools", "")),
+            triggers=SkillLoader._parse_list(meta.get("triggers", "")),
+            instructions=body,
         )
 
 
