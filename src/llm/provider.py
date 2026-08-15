@@ -1,4 +1,4 @@
-"""Antarmuka dasar BaseLLMProvider untuk penyedia model AI yang modular."""
+"""Provider abstraction untuk LLM."""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -19,8 +19,6 @@ class LLMResponse(BaseModel):
 
 
 class BaseLLMProvider(ABC):
-    """Antarmuka abstrak penyedia model AI (OpenRouter, DeepSeek, LiteLLM)."""
-
     @abstractmethod
     async def chat_completion(
         self,
@@ -30,5 +28,6 @@ class BaseLLMProvider(ABC):
         temperature: float = 0.7,
         response_format: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        usage_context: dict[str, str | None] | None = None,
     ) -> LLMResponse:
-        """Menghasilkan respon chat completion."""
+        """Menghasilkan chat completion."""

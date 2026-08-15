@@ -1,28 +1,37 @@
-"""Orkestrator utama sistem Morrow v0.2 dengan concurrency lock per grup."""
+"""Morrow orchestrator. Telegram is transport; all agent-to-agent collaboration is backend-controlled."""
 
 import asyncio
+import re
 from collections import defaultdict
 
 from src.adapters.base import BaseChannelAdapter
 from src.agents.advisor import advisor_agent
 from src.agents.manager import manager_agent
 from src.agents.marketing import marketing_agent
+from src.approval.gateway import approval_gateway
 from src.core.normalizer import MessageNormalizer
-from src.core.types import NormalizedMessage, RoleID
+from src.core.types import AddressingType, MessageIntent, NormalizedMessage, RoleID, TaskStatus
+from src.llm.usage_meter import usage_meter
 from src.memory.judge import memory_judge
+from src.routing.addressing import addressing_detector
+from src.routing.fast_path import message_map_key
 from src.routing.role_router import role_router
+from src.routing.social import social_response
+from src.routing.task_analysis import task_analyzer
 from src.safety.conflict_detector import conflict_detector
+from src.safety.loop_guard import loop_guard
 from src.storage.sqlite import db
+from src.tasks.handoff import task_handoff
 from src.tasks.service import task_service
 
 
-class SystemOrchestrator:
-    """Koordinator alur percakapan dan pengendali konkurensi grup (CAP-SAFETY / NFR-CON-002)."""
+APPROVAL_RE = re.compile(r"^/(approve|reject)(?:@\w+)?\s+(appr_[A-Za-z0-9_-]+)\s*$", re.I)
 
+
+class SystemOrchestrator:
     def __init__(self, adapter: BaseChannelAdapter):
         self.adapter = adapter
         self.adapter.register_handler(self.handle_incoming_message)
-        # Kunci konkurensi per-grup untuk mencegah blocking global antar grup yang berbeda
         self._group_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._agents = {
             RoleID.MANAGER: manager_agent,
@@ -30,195 +39,255 @@ class SystemOrchestrator:
             RoleID.ADVISOR: advisor_agent,
         }
 
+    async def _map_sent_message(self, message: NormalizedMessage, sent_id: str, role: RoleID) -> None:
+        key = message_map_key(message.group_id, sent_id, message.platform)
+        await db.execute(
+            """INSERT OR REPLACE INTO message_agent_map
+               (platform_message_id, originating_role_id, bot_identity, group_id)
+               VALUES (?, ?, ?, ?)""",
+            (key, role.value, f"bot_{role.value}", message.group_id),
+        )
+
+    async def _send(
+        self,
+        message: NormalizedMessage,
+        role: RoleID,
+        text: str,
+        reply_to: str | None = None,
+    ) -> str:
+        sent_id = await self.adapter.send_message(
+            group_id=message.group_id,
+            text=text,
+            from_role=role,
+            reply_to_message_id=reply_to or message.message_id,
+        )
+        await self._map_sent_message(message, sent_id, role)
+        return sent_id
+
+    async def _handle_approval_command(self, message: NormalizedMessage) -> str | None:
+        match = APPROVAL_RE.match(message.text.strip())
+        if not match:
+            return None
+        action, approval_id = match.groups()
+        row = await approval_gateway.get_request(approval_id)
+        if not row or row["group_id"] != message.group_id:
+            text = "Approval tidak ditemukan untuk grup ini."
+            await self._send(message, RoleID.MANAGER, text)
+            return text
+        requested_role = RoleID(row["requested_by_role"])
+        if action.lower() == "reject":
+            ok = await approval_gateway.reject_request(approval_id, message.group_id)
+            text = "Permintaan tindakan ditolak." if ok else "Approval sudah tidak dapat ditolak."
+            await self._send(message, requested_role, text)
+            return text
+
+        ok, reason = await approval_gateway.approve_request(
+            approval_id=approval_id,
+            approved_by=message.sender_id,
+            expected_group_id=message.group_id,
+        )
+        if not ok:
+            await self._send(message, requested_role, reason)
+            return reason
+        result = await approval_gateway.execute_approved_request(approval_id)
+        if result.get("success"):
+            text = f"Tindakan disetujui dan selesai. Execution ID: {result.get('execution_id')}"
+        elif result.get("status") == "unknown" or result.get("approval_status") == "unknown":
+            text = "Tindakan disetujui, tetapi hasil eksternalnya tidak pasti. Sistem tidak akan retry otomatis."
+        else:
+            text = f"Approval diterima, tetapi eksekusi gagal: {result.get('error', 'unknown error')}"
+        await self._send(message, requested_role, text)
+        return text
+
+    async def _run_collective_work(
+        self,
+        message: NormalizedMessage,
+        targets: list[RoleID],
+        coordinator: RoleID,
+    ) -> str:
+        unique_targets = []
+        for role in [coordinator, *targets]:
+            if role not in unique_targets:
+                unique_targets.append(role)
+        unique_targets = unique_targets[:3]
+        task = await task_service.create_task(
+            group_id=message.group_id,
+            title=(message.text.strip() or "Kolaborasi tim")[:120],
+            description=message.text,
+            initial_owner=coordinator,
+        )
+        await task_service.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+        thread_id = f"thr_{message.group_id}_{message.message_id}"
+        analysis = task_analyzer.analyze(message.text, coordinator, len(message.attachments))
+        contributions: list[tuple[RoleID, str]] = []
+        last_sent = message.message_id
+
+        for role in unique_targets:
+            if not await usage_meter.check_thread_budget(message.group_id, thread_id):
+                break
+            allowed, _, _ = await loop_guard.can_continue_discussion(thread_id, message.group_id, role)
+            if not allowed:
+                break
+            if role == coordinator:
+                work_msg = message
+                handoff = {"mode": "discussion_coordinator", "task_id": task.id}
+            else:
+                context = "\n\n".join(f"{r.value}: {text}" for r, text in contributions)
+                work_msg = message.model_copy(update={
+                    "message_id": f"collab_{role.value}_{message.message_id}",
+                    "text": f"Instruksi pengguna:\n{message.text}\n\nKontribusi tim sejauh ini:\n{context}",
+                    "reply_to_message_id": last_sent,
+                    "event_claimed": True,
+                })
+                handoff = {"mode": "discussion_contributor", "task_id": task.id, "coordinator": coordinator.value}
+            response = await self._agents[role].execute(
+                work_msg,
+                workload=analysis.workload,
+                risk_level=analysis.risk_level,
+                handoff_payload=handoff,
+                task_id=task.id,
+                thread_id=thread_id,
+            )
+            last_sent = await self._send(message, role, response, last_sent)
+            contributions.append((role, response))
+
+        final_text = contributions[-1][1] if contributions else "Kolaborasi tidak dapat dijalankan."
+        # Jika masih ada satu turn, coordinator menyintesis kontribusi agar user tidak menerima tiga jawaban terpisah tanpa penutup.
+        if len(contributions) > 1 and await usage_meter.check_thread_budget(message.group_id, thread_id):
+            allowed, _, _ = await loop_guard.can_continue_discussion(thread_id, message.group_id, coordinator)
+            if allowed:
+                context = "\n\n".join(f"{role.value.upper()}:\n{text}" for role, text in contributions)
+                synth_msg = message.model_copy(update={
+                    "message_id": f"synthesis_{message.message_id}",
+                    "text": f"Instruksi awal:\n{message.text}\n\nKontribusi tim:\n{context}\n\nSintesis hasil akhir, hilangkan duplikasi dan nyatakan next action.",
+                    "reply_to_message_id": last_sent,
+                    "event_claimed": True,
+                })
+                final_text = await self._agents[coordinator].execute(
+                    synth_msg,
+                    workload=analysis.workload,
+                    risk_level=analysis.risk_level,
+                    handoff_payload={"mode": "final_synthesis", "task_id": task.id},
+                    task_id=task.id,
+                    thread_id=thread_id,
+                )
+                await self._send(message, coordinator, final_text, last_sent)
+
+        await task_service.update_task_status(task.id, TaskStatus.DONE)
+        await memory_judge.evaluate_and_commit(
+            actor_id=message.sender_id,
+            role_id=coordinator,
+            group_id=message.group_id,
+            user_text=message.text,
+            assistant_text=final_text,
+        )
+        return final_text
+
     async def handle_incoming_message(self, message: NormalizedMessage) -> str | None:
-        """Menangani pesan masuk dari adapter secara aman dan terurut."""
-        # 1. Cek Akses Pengguna & Grup (AC-001)
-        is_allowed, rejection_reason = MessageNormalizer.check_access(message)
-        if not is_allowed:
-            # Abaikan pesan tanpa membalas atau memproses jika tidak terdaftar (REQ-ACC-003)
-            print(f"[Akses Ditolak] {rejection_reason}")
+        allowed, _ = MessageNormalizer.check_access(message)
+        if not allowed:
             return None
+        if not message.event_claimed:
+            won = await MessageNormalizer.claim_event(message.message_id, message.platform, message.group_id)
+            if not won:
+                return None
+            message.event_claimed = True
 
-        # 2. Deduplikasi Event Masuk (AC-021)
-        if await MessageNormalizer.is_duplicate_event(message.message_id):
-            print(f"[Deduplikasi] Event {message.message_id} sudah diproses sebelumnya.")
-            return None
-
-        # 3. Kunci Konkurensi Per-Grup (AC-020)
         async with self._group_locks[message.group_id]:
-            # 4. Deteksi Pengalamatan Kolektif & Niat Pesan (Addressing & Intent)
-            from src.core.types import AddressingType, MessageIntent
-            from src.routing.addressing import addressing_detector
+            approval_result = await self._handle_approval_command(message)
+            if approval_result is not None:
+                return approval_result
 
-            addr_res = await addressing_detector.detect(message)
-
-            # MODE A: SOCIAL BROADCAST (contoh: "halo semua", "pagi tim", "Manager dan Marketing, halo")
-            if addr_res.allow_multi_response and addr_res.intent == MessageIntent.SOCIAL:
+            addressing = await addressing_detector.detect(message)
+            if addressing.allow_multi_response and addressing.intent == MessageIntent.SOCIAL:
                 responses = []
-                for role in addr_res.target_agents:
-                    agent = self._agents[role]
-                    resp = await agent.execute(message)
-                    sent_id = await self.adapter.send_message(
-                        group_id=message.group_id,
-                        text=resp,
-                        from_role=role,
-                        reply_to_message_id=message.message_id,
-                    )
-                    await db.execute(
-                        """
-                        INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        (sent_id, role.value, f"bot_{role.value}", message.group_id),
-                    )
-                    responses.append(f"[{role.value.capitalize()}]: {resp}")
-                # Sapaan sosial selesai (tanpa membuat task dan tanpa mencemari memori durable)
+                for role in addressing.target_agents:
+                    text = social_response(role, message.text)
+                    await self._send(message, role, text)
+                    responses.append(f"[{role.value}]: {text}")
                 return "\n".join(responses)
 
-            # MODE B: MULTI-AGENT WORK REQUEST (contoh: "semua, bantu strategi launch", "Manager dan Advisor, evaluasi keputusan ini")
-            if addr_res.requires_coordinator and addr_res.target_agents:
-                coordinator_role = addr_res.coordinator or RoleID.MANAGER
-                coord_agent = self._agents[coordinator_role]
-                coord_resp = await coord_agent.execute(message)
-                coord_msg_id = await self.adapter.send_message(
-                    group_id=message.group_id,
-                    text=coord_resp,
-                    from_role=coordinator_role,
-                    reply_to_message_id=message.message_id,
-                )
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (coord_msg_id, coordinator_role.value, f"bot_{coordinator_role.value}", message.group_id),
-                )
-
-                # Kontribusi dari agen spesialis lain yang ditargetkan
-                for other_role in addr_res.target_agents:
-                    if other_role != coordinator_role:
-                        other_agent = self._agents[other_role]
-                        other_msg = NormalizedMessage(
-                            message_id=f"collab_{other_role.value}_{message.message_id}",
-                            group_id=message.group_id,
-                            sender_id=message.sender_id,
-                            sender_name=message.sender_name,
-                            text=f"[Kolaborasi Tim]: {coord_resp}\n\nInstruksi pengguna: {message.text}",
-                            reply_to_message_id=coord_msg_id,
-                        )
-                        other_resp = await other_agent.execute(other_msg)
-                        other_msg_id = await self.adapter.send_message(
-                            group_id=message.group_id,
-                            text=other_resp,
-                            from_role=other_role,
-                            reply_to_message_id=coord_msg_id,
-                        )
-                        await db.execute(
-                            """
-                            INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
-                            VALUES (?, ?, ?, ?)
-                            """,
-                            (other_msg_id, other_role.value, f"bot_{other_role.value}", message.group_id),
-                        )
-                return coord_resp
-
-            # MODE C: OBJECT QUANTIFIER / SINGLE AGENT / NORMAL TASK
-            # Deteksi Konflik Instruksi (AC-011, AC-015)
             active_tasks = await task_service.list_active_tasks(message.group_id)
-            is_conflict, conflict_desc, affected_task = conflict_detector.detect_conflict(message.text, active_tasks)
-            if is_conflict and affected_task:
-                pause_msg = f"⚠️ **OTOMATISASI DIJEDA KARENA TERDETEKSI KONFLIK INSTRUKSI:**\n{conflict_desc}\n\nMohon konfirmasi klarifikasi manusia untuk melanjutkan."
-                await self.adapter.send_message(message.group_id, pause_msg)
-                return pause_msg
+            is_conflict, desc, affected = conflict_detector.detect_conflict(message.text, active_tasks)
+            if is_conflict and affected:
+                await task_service.update_task_status(affected.id, TaskStatus.WAITING_USER)
+                pause = f"Otomatisasi dijeda karena instruksi berpotensi konflik dengan task '{affected.title}'. {desc or ''} Mohon klarifikasi."
+                await self._send(message, affected.current_owner, pause)
+                return pause
 
-            # Penyaluran Pesan ke Tepat Satu Agen Utama (AC-003, AC-004)
-            if addr_res.addressing_type == AddressingType.SINGLE_AGENT and addr_res.target_agents:
-                primary_role = addr_res.target_agents[0]
+            if addressing.requires_coordinator and addressing.target_agents:
+                return await self._run_collective_work(
+                    message,
+                    addressing.target_agents,
+                    addressing.coordinator or RoleID.MANAGER,
+                )
+
+            if addressing.addressing_type == AddressingType.SINGLE_AGENT and addressing.target_agents:
+                primary_role = addressing.target_agents[0]
             else:
-                primary_role, routing_reason = await role_router.route_message(message)
+                primary_role, _ = await role_router.route_message(message)
 
-            agent_instance = self._agents[primary_role]
-            response_text = await agent_instance.execute(message)
+            analysis = task_analyzer.analyze(message.text, primary_role, len(message.attachments))
+            # Jika routing normal membutuhkan >1 spesialis, gunakan diskusi bounded daripada handoff berantai yang mengaburkan ownership.
+            if len(analysis.collaborators) > 1:
+                return await self._run_collective_work(
+                    message,
+                    [primary_role, *analysis.collaborators],
+                    primary_role,
+                )
 
-            # 7. Simpan Pesan dan Pemetaan Reply-Aware ke Database
-            sent_msg_id = await self.adapter.send_message(
-                group_id=message.group_id,
-                text=response_text,
-                from_role=primary_role,
-                reply_to_message_id=message.message_id,
+            response = await self._agents[primary_role].execute(
+                message,
+                workload=analysis.workload,
+                risk_level=analysis.risk_level,
             )
+            sent_id = await self._send(message, primary_role, response)
+            final_text = response
+            final_role = primary_role
 
-            bot_id_str = f"bot_{primary_role.value}"
-            await db.execute(
-                """
-                INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
-                VALUES (?, ?, ?, ?)
-                """,
-                (sent_msg_id, primary_role.value, bot_id_str, message.group_id),
-            )
-
-            # 8. Evaluasi Hakim Memori (Memory Judge) secara hemat di background
-            await memory_judge.evaluate_and_commit(
-                text=response_text,
-                actor_id=message.sender_id,
-                role_id=primary_role,
-            )
-
-            # 9. Koordinasi Antar-Agen Backend Terkendali (Backend-Controlled Delegation)
-            delegation_target = None
-            lower_resp = response_text.lower()
-            if addr_res.intent != MessageIntent.SOCIAL:
-                if primary_role == RoleID.MANAGER:
-                    if any(kw in lower_resp for kw in ["delegasikan ke marketing", "serahkan ke marketing", "tindak lanjut marketing", "saya delegasikan ke @marketing"]):
-                        delegation_target = RoleID.MARKETING
-                    elif any(kw in lower_resp for kw in ["delegasikan ke advisor", "serahkan ke advisor", "tindak lanjut advisor", "saya delegasikan ke @advisor"]):
-                        delegation_target = RoleID.ADVISOR
-                elif primary_role == RoleID.MARKETING:
-                    if any(kw in lower_resp for kw in ["delegasikan ke advisor", "konsultasikan ke advisor", "saya delegasikan ke @advisor"]):
-                        delegation_target = RoleID.ADVISOR
-
-            if delegation_target and delegation_target != primary_role:
-                from src.tasks.handoff import task_handoff
-                new_task = await task_service.create_task(
+            if analysis.collaborators:
+                target = analysis.collaborators[0]
+                task = await task_service.create_task(
                     group_id=message.group_id,
-                    title=f"Delegasi dari {primary_role.value.capitalize()}",
+                    title=(message.text.strip() or "Delegated work")[:120],
                     description=message.text,
                     initial_owner=primary_role,
                 )
-                await task_handoff.handoff_task(
-                    task_id=new_task.id,
+                await task_service.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+                ok, reason = await task_handoff.handoff_task(
+                    task_id=task.id,
                     from_role=primary_role,
-                    to_role=delegation_target,
-                    reason=f"Delegasi otomatis dari {primary_role.value}",
+                    to_role=target,
+                    reason=analysis.reason,
+                    context_payload={"initial_instruction": message.text},
                 )
+                if ok:
+                    delegated = message.model_copy(update={
+                        "message_id": f"handoff_{message.message_id}",
+                        "text": f"Instruksi awal pengguna:\n{message.text}\n\nRespons awal {primary_role.value}:\n{response}",
+                        "reply_to_message_id": sent_id,
+                        "event_claimed": True,
+                    })
+                    final_text = await self._agents[target].execute(
+                        delegated,
+                        workload=analysis.workload,
+                        risk_level=analysis.risk_level,
+                        handoff_payload={"from_role": primary_role.value, "task_id": task.id},
+                        task_id=task.id,
+                    )
+                    await self._send(message, target, final_text, sent_id)
+                    final_role = target
+                    await task_service.update_task_status(task.id, TaskStatus.DONE)
+                else:
+                    await task_service.update_task_status(task.id, TaskStatus.BLOCKED)
+                    final_text = response + f"\n\nHandoff tidak dijalankan: {reason}"
 
-                delegated_agent = self._agents[delegation_target]
-                handoff_msg = NormalizedMessage(
-                    message_id=f"handoff_{message.message_id}",
+            if addressing.intent != MessageIntent.SOCIAL:
+                await memory_judge.evaluate_and_commit(
+                    actor_id=message.sender_id,
+                    role_id=final_role,
                     group_id=message.group_id,
-                    sender_id=message.sender_id,
-                    sender_name=message.sender_name,
-                    text=f"[Pesan dari {primary_role.value.capitalize()}]: {response_text}\n\nInstruksi awal: {message.text}",
-                    reply_to_message_id=sent_msg_id,
+                    user_text=message.text,
+                    assistant_text=final_text,
                 )
-                delegated_response = await delegated_agent.execute(
-                    handoff_msg,
-                    handoff_payload={"from_role": primary_role.value, "task_id": new_task.id, "initial_instruction": message.text},
-                )
-
-                delegated_msg_id = await self.adapter.send_message(
-                    group_id=message.group_id,
-                    text=delegated_response,
-                    from_role=delegation_target,
-                    reply_to_message_id=sent_msg_id,
-                )
-                bot_id_str = f"bot_{delegation_target.value}"
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (delegated_msg_id, delegation_target.value, bot_id_str, message.group_id),
-                )
-
-            return response_text
+            return final_text

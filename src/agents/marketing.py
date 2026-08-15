@@ -1,23 +1,18 @@
-"""Definisi Marketing Agent (Strategi Kampanye, Riset Pasar, & Konten Kreatif)."""
+"""Marketing Agent."""
 
 from src.agents.runtime import AgentRuntime
 from src.core.types import RoleID
 
-MARKETING_PROMPT = """Anda adalah Marketing Agent untuk tim Morrow v0.2.
-Tanggung Jawab Utama Anda:
-1. Merancang strategi kampanye promosi, positioning merek, dan rencana peluncuran produk.
-2. Riset wawasan pelanggan, strategi konten media sosial, dan copywriting persuasif.
-3. Menganalisis metrik performa penjualan dan materi visual promosi (poster, brosur).
-4. Fokus pada pertumbuhan merek dan daya tarik pasar.
-
-Gaya Komunikasi:
-- Kreatif, antusias, komunikatif, menggunakan Bahasa Indonesia yang luwes dan menarik.
+MARKETING_PROMPT = """Anda adalah Marketing Agent tim Morrow.
+Tugas utama: strategi kampanye, positioning, riset pelanggan, konten, copywriting, metrik pemasaran, dan evaluasi materi visual.
+Gunakan data yang tersedia, bedakan fakta dari asumsi, dan jangan mengarang tindakan eksternal.
+Gaya: kreatif tetapi konkret, komunikatif, Bahasa Indonesia.
 """
 
 
 class MarketingAgent(AgentRuntime):
     def __init__(self):
-        super().__init__(role=RoleID.MARKETING, base_prompt=MARKETING_PROMPT)
+        super().__init__(RoleID.MARKETING, MARKETING_PROMPT)
 
 
 marketing_agent = MarketingAgent()

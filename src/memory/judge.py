@@ -1,4 +1,4 @@
-"""Hakim Memori (Memory Judge) menggunakan MiMo-V2.5 Non-Thinking."""
+"""Memory Judge menyimpan fakta/keputusan eksplisit dari exchange, bukan spekulasi agent."""
 
 import json
 from typing import Any
@@ -8,59 +8,75 @@ from src.llm.model_catalog import MODEL_CATALOG
 from src.llm.openrouter import openrouter_client
 from src.memory.service import memory_service
 
-JUDGE_SYSTEM_PROMPT = """Anda adalah Hakim Memori (Memory Judge) untuk sistem AI Morrow.
-Tugas Anda adalah memeriksa pesan agen/pengguna untuk menentukan apakah ada fakta resmi, tenggat waktu (deadline), atau keputusan proyek yang layak disimpan ke memori permanen.
-
-Format Output WAJIB JSON:
-{
-  "should_store": true | false,
-  "scope": "shared" | "role",
-  "key": "nama_kunci_singkat",
-  "value": "nilai_fakta_atau_keputusan",
-  "memory_type": "decision" | "fact" | "constraint" | "status",
-  "reason": "alasan_penyimpanan"
-}
+JUDGE_SYSTEM_PROMPT = """Anda adalah Hakim Memori (Memory Judge) Morrow.
+Simpan hanya informasi durable yang benar-benar dinyatakan/ditetapkan pengguna atau hasil status sistem yang terverifikasi: fakta proyek, keputusan final, constraint, deadline, atau status penting.
+JANGAN simpan sapaan, brainstorming sementara, opini/saran agent, asumsi, atau fakta yang hanya dibuat oleh jawaban assistant.
+Jika assistant menyebut sesuatu yang tidak didukung pesan pengguna, jangan simpan sebagai fakta.
+Output JSON ketat:
+{"should_store": true|false, "items": [{"scope":"shared"|"role","key":"...","value":"...","memory_type":"decision"|"fact"|"constraint"|"status","reason":"..."}]}
 """
 
 
 class MemoryJudge:
-    """Penyaring fakta berharga agar memori bersama tidak tercemar obrolan sampah."""
-
     @staticmethod
     async def evaluate_and_commit(
-        text: str,
-        actor_id: str,
+        text: str | None = None,
+        actor_id: str = "system",
         role_id: RoleID | None = None,
+        group_id: str = "__global__",
+        user_text: str | None = None,
+        assistant_text: str | None = None,
     ) -> dict[str, Any] | None:
-        messages = [
-            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Evaluasi teks berikut:\n\n{text}"},
-        ]
+        if user_text is None and assistant_text is None:
+            user_text = text or ""
+            assistant_text = ""
+        if not (user_text or "").strip():
+            return None
+        payload = f"PESAN PENGGUNA:\n{user_text}\n\nJAWABAN AGENT:\n{assistant_text or ''}"
         try:
             res = await openrouter_client.chat_completion(
-                messages=messages,
+                messages=[
+                    {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": payload},
+                ],
                 model=MODEL_CATALOG["mimo_v2_5"].model_id,
-                temperature=0.1,
+                temperature=0.0,
                 response_format={"type": "json_object"},
+                usage_context={"group_id": group_id, "role_id": role_id.value if role_id else None},
             )
             data = json.loads(res.content)
-            if data.get("should_store") and data.get("key") and data.get("value"):
-                scope_enum = MemoryScope.SHARED if data.get("scope") == "shared" else MemoryScope.ROLE
-                mem_type = MemoryType(data.get("memory_type", "fact"))
-                await memory_service.set_memory(
-                    scope=scope_enum,
-                    key=data["key"],
-                    value=data["value"],
-                    changed_by_actor=actor_id,
-                    role_id=role_id if scope_enum == MemoryScope.ROLE else None,
-                    changed_by_role=role_id,
-                    reason=data.get("reason", "Disimpan oleh Memory Judge"),
-                    memory_type=mem_type,
-                )
+            if not data.get("should_store"):
                 return data
+            items = data.get("items") or []
+            # compatibility dengan shape lama
+            if not items and data.get("key") and data.get("value"):
+                items = [data]
+            for item in items[:5]:
+                if not item.get("key") or not item.get("value"):
+                    continue
+                scope = MemoryScope.SHARED if item.get("scope") == "shared" else MemoryScope.ROLE
+                if scope == MemoryScope.ROLE and role_id is None:
+                    continue
+                try:
+                    mem_type = MemoryType(item.get("memory_type", "fact"))
+                except ValueError:
+                    mem_type = MemoryType.FACT
+                await memory_service.set_memory(
+                    scope=scope,
+                    key=str(item["key"])[:120],
+                    value=str(item["value"])[:4000],
+                    changed_by_actor=actor_id,
+                    role_id=role_id if scope == MemoryScope.ROLE else None,
+                    changed_by_role=role_id,
+                    reason=item.get("reason", "Memory Judge"),
+                    memory_type=mem_type,
+                    group_id=group_id,
+                )
+            return data
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return None
         except Exception:
-            pass
-        return None
+            return None
 
 
 memory_judge = MemoryJudge()
