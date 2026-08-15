@@ -31,29 +31,12 @@ class Settings(BaseSettings):
     sqlite_db_path: str = Field(default="", alias="SQLITE_DB_PATH")
     storage_dir: str = Field(default="data/storage", alias="STORAGE_DIR")
     memory_vault_dir: str = Field(default="data/memory", alias="MEMORY_VAULT_DIR")
-    memory_embedding_model: str = Field(
-        default="openai/text-embedding-3-small",
-        alias="MEMORY_EMBEDDING_MODEL",
-    )
-    memory_embedding_dimensions: int = Field(
-        default=384,
-        gt=0,
-        le=4096,
-        alias="MEMORY_EMBEDDING_DIMENSIONS",
-    )
-    memory_embedding_max_chars: int = Field(
-        default=4000,
-        gt=0,
-        alias="MEMORY_EMBEDDING_MAX_CHARS",
-    )
+    memory_embedding_model: str = Field(default="openai/text-embedding-3-small", alias="MEMORY_EMBEDDING_MODEL")
+    memory_embedding_dimensions: int = Field(default=384, gt=0, le=4096, alias="MEMORY_EMBEDDING_DIMENSIONS")
+    memory_embedding_max_chars: int = Field(default=4000, gt=0, alias="MEMORY_EMBEDDING_MAX_CHARS")
     memory_hybrid_top_k: int = Field(default=8, gt=0, le=50, alias="MEMORY_HYBRID_TOP_K")
     memory_semantic_enabled: bool = Field(default=True, alias="MEMORY_SEMANTIC_ENABLED")
-    memory_semantic_backfill_limit: int = Field(
-        default=200,
-        ge=0,
-        le=5000,
-        alias="MEMORY_SEMANTIC_BACKFILL_LIMIT",
-    )
+    memory_semantic_backfill_limit: int = Field(default=200, ge=0, le=5000, alias="MEMORY_SEMANTIC_BACKFILL_LIMIT")
     max_attachment_size_mb: int = Field(default=20, gt=0, alias="MAX_ATTACHMENT_SIZE_MB")
     max_attachment_context_chars: int = Field(default=12_000, gt=0, alias="MAX_ATTACHMENT_CONTEXT_CHARS")
     max_total_attachment_context_chars: int = Field(default=24_000, gt=0, alias="MAX_TOTAL_ATTACHMENT_CONTEXT_CHARS")
@@ -72,6 +55,9 @@ class Settings(BaseSettings):
     max_memory_judge_output_tokens: int = Field(default=768, gt=0, alias="MAX_MEMORY_JUDGE_OUTPUT_TOKENS")
     max_vision_output_tokens: int = Field(default=1200, gt=0, alias="MAX_VISION_OUTPUT_TOKENS")
     max_tool_rounds: int = Field(default=4, gt=0, le=8, alias="MAX_TOOL_ROUNDS")
+    max_discovered_tools_per_query: int = Field(default=8, gt=0, le=24, alias="MAX_DISCOVERED_TOOLS_PER_QUERY")
+    max_auto_tools_per_message: int = Field(default=3, ge=0, le=12, alias="MAX_AUTO_TOOLS_PER_MESSAGE")
+    tool_discovery_enabled: bool = Field(default=True, alias="TOOL_DISCOVERY_ENABLED")
     openrouter_timeout_seconds: float = Field(default=180.0, gt=0, alias="OPENROUTER_TIMEOUT_SECONDS")
 
     web_search_enabled: bool = Field(default=True, alias="WEB_SEARCH_ENABLED")
@@ -82,6 +68,12 @@ class Settings(BaseSettings):
     datetime_tool_enabled: bool = Field(default=True, alias="DATETIME_TOOL_ENABLED")
     morrow_timezone: str = Field(default="Asia/Jakarta", alias="MORROW_TIMEZONE")
 
+    browser_enabled: bool = Field(default=False, alias="BROWSER_ENABLED")
+    browser_backend: str = Field(default="agent-browser", alias="BROWSER_BACKEND")
+    browser_agent_executable: str = Field(default="agent-browser", alias="BROWSER_AGENT_EXECUTABLE")
+    browser_timeout_seconds: float = Field(default=45.0, gt=0, alias="BROWSER_TIMEOUT_SECONDS")
+    browser_headed: bool = Field(default=False, alias="BROWSER_HEADED")
+
     budget_routing_per_message: float = Field(default=0.002, ge=0, alias="BUDGET_ROUTING_PER_MESSAGE")
     budget_normal_task: float = Field(default=0.05, ge=0, alias="BUDGET_NORMAL_TASK")
     budget_thread_total: float = Field(default=0.50, gt=0, alias="BUDGET_THREAD_TOTAL")
@@ -90,11 +82,7 @@ class Settings(BaseSettings):
     channel_adapter: str = Field(default="cli", alias="CHANNEL_ADAPTER")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def db_path(self) -> str:
@@ -124,11 +112,7 @@ class Settings(BaseSettings):
 
     @property
     def configured_telegram_token_count(self) -> int:
-        return sum(
-            1
-            for cfg in self.telegram_bots.values()
-            if cfg.token and cfg.token.get_secret_value().strip()
-        )
+        return sum(1 for cfg in self.telegram_bots.values() if cfg.token and cfg.token.get_secret_value().strip())
 
     def validate_openrouter_key(self, *, allow_mock: bool = False) -> None:
         value = self.openrouter_api_key.get_secret_value().strip()
@@ -143,10 +127,7 @@ class Settings(BaseSettings):
             if not bot_cfg.token or not bot_cfg.token.get_secret_value().strip():
                 missing_roles.append(role.value)
         if missing_roles:
-            raise ValueError(
-                "Konfigurasi Bot Telegram tidak lengkap. Token wajib belum diisi untuk: "
-                + ", ".join(missing_roles)
-            )
+            raise ValueError("Konfigurasi Bot Telegram tidak lengkap. Token wajib belum diisi untuk: " + ", ".join(missing_roles))
 
     def validate_telegram_access(self) -> None:
         if not self.allowlisted_groups:

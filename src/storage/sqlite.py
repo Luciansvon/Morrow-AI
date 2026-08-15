@@ -37,7 +37,6 @@ class DatabaseManager:
             return
         try:
             import sqlite_vec
-
             await conn.enable_load_extension(True)
             await conn.load_extension(sqlite_vec.loadable_path())
             async with conn.execute("SELECT vec_version()") as cursor:
@@ -77,11 +76,19 @@ class DatabaseManager:
         return {row["name"] for row in rows}
 
     async def _table_exists(self, table: str) -> bool:
-        row = await self.fetch_one(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
-        )
+        row = await self.fetch_one("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
         return bool(row)
+
+    async def _migrate_tool_execution_journal(self, conn: aiosqlite.Connection) -> None:
+        if not await self._table_exists("tool_executions"):
+            return
+        cols = await self._table_columns("tool_executions")
+        if "execution_id" in cols:
+            return
+        await conn.execute("ALTER TABLE tool_executions RENAME TO tool_executions_legacy_v024")
+        await conn.execute("""CREATE TABLE tool_executions (execution_id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE, group_id TEXT, thread_id TEXT, task_id TEXT, role_id TEXT, tool_name TEXT NOT NULL, parameters_json TEXT NOT NULL, classification TEXT NOT NULL DEFAULT 'unknown', capability TEXT NOT NULL DEFAULT 'unknown', policy_decision TEXT NOT NULL DEFAULT 'unknown', approval_id TEXT, status TEXT NOT NULL, result_json TEXT, error_text TEXT, retry_count INTEGER NOT NULL DEFAULT 0, side_effect INTEGER NOT NULL DEFAULT 0, retry_safe INTEGER NOT NULL DEFAULT 0, provenance_json TEXT, started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, finished_at TIMESTAMP)""")
+        await conn.execute("""INSERT INTO tool_executions (execution_id, idempotency_key, tool_name, parameters_json, classification, capability, policy_decision, status, result_json, error_text, side_effect, retry_safe, started_at, finished_at) SELECT 'legacy_' || printf('%016x', rowid), idempotency_key, tool_name, parameters_json, 'legacy', 'unknown', 'legacy_import', status, result_json, error_text, CASE WHEN idempotency_key IS NOT NULL THEN 1 ELSE 0 END, 0, started_at, finished_at FROM tool_executions_legacy_v024""")
+        await conn.execute("DROP TABLE tool_executions_legacy_v024")
 
     async def _migrate_legacy_schema(self) -> None:
         conn = await self.connect()
@@ -89,34 +96,11 @@ class DatabaseManager:
             cols = await self._table_columns("memories")
             if "group_id" not in cols:
                 await conn.execute("ALTER TABLE memories RENAME TO memories_legacy_v02")
-                await conn.execute(
-                    """CREATE TABLE memories (
-                        id TEXT PRIMARY KEY,
-                        group_id TEXT NOT NULL DEFAULT '__global__',
-                        scope TEXT NOT NULL,
-                        role_id TEXT,
-                        key TEXT NOT NULL,
-                        value TEXT NOT NULL,
-                        memory_type TEXT NOT NULL DEFAULT 'fact',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )"""
-                )
-                await conn.execute(
-                    """INSERT INTO memories
-                       (id, group_id, scope, role_id, key, value, memory_type, created_at, updated_at)
-                       SELECT id, '__global__', scope, role_id, key, value, memory_type, created_at, updated_at
-                       FROM memories_legacy_v02"""
-                )
+                await conn.execute("""CREATE TABLE memories (id TEXT PRIMARY KEY, group_id TEXT NOT NULL DEFAULT '__global__', scope TEXT NOT NULL, role_id TEXT, key TEXT NOT NULL, value TEXT NOT NULL, memory_type TEXT NOT NULL DEFAULT 'fact', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+                await conn.execute("""INSERT INTO memories (id, group_id, scope, role_id, key, value, memory_type, created_at, updated_at) SELECT id, '__global__', scope, role_id, key, value, memory_type, created_at, updated_at FROM memories_legacy_v02""")
                 await conn.execute("DROP TABLE memories_legacy_v02")
-
-        migrations = {
-            "memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")],
-            "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")],
-            "approvals": [("execution_error", "TEXT")],
-            "processed_events": [("group_id", "TEXT")],
-            "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")],
-        }
+        await self._migrate_tool_execution_journal(conn)
+        migrations = {"memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")], "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")], "approvals": [("execution_error", "TEXT")], "processed_events": [("group_id", "TEXT")], "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")]}
         for table, additions in migrations.items():
             if not await self._table_exists(table):
                 continue
@@ -124,44 +108,20 @@ class DatabaseManager:
             for col, ddl in additions:
                 if col not in cols:
                     await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
-
         if await self._table_exists("memories"):
-            await conn.execute(
-                """DELETE FROM memories WHERE id IN (
-                    SELECT id FROM (
-                        SELECT id,
-                               ROW_NUMBER() OVER (
-                                   PARTITION BY group_id, scope,
-                                     CASE WHEN scope='role' THEN COALESCE(role_id, '') ELSE '' END,
-                                     key
-                                   ORDER BY updated_at DESC, created_at DESC, rowid DESC
-                               ) AS rn
-                        FROM memories
-                    ) ranked WHERE rn > 1
-                )"""
-            )
+            await conn.execute("""DELETE FROM memories WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY group_id, scope, CASE WHEN scope='role' THEN COALESCE(role_id, '') ELSE '' END, key ORDER BY updated_at DESC, created_at DESC, rowid DESC) AS rn FROM memories) ranked WHERE rn > 1)""")
         await conn.commit()
 
     async def _ensure_memory_vector_schema(self, conn: aiosqlite.Connection) -> None:
         if not self._vector_extension_loaded or not settings.memory_semantic_enabled:
             return
         dimensions = settings.memory_embedding_dimensions
-        async with conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_vec'"
-        ) as cursor:
+        async with conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_vec'") as cursor:
             row = await cursor.fetchone()
         if row and f"float[{dimensions}]" not in str(row["sql"] or "").lower():
             await conn.execute("DROP TABLE memory_vec")
             await conn.execute("DELETE FROM memory_vector_map")
-        await conn.execute(
-            f"""CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
-                vector_id INTEGER PRIMARY KEY,
-                embedding FLOAT[{dimensions}] distance_metric=cosine,
-                group_id TEXT PARTITION KEY,
-                scope TEXT,
-                role_id TEXT
-            )"""
-        )
+        await conn.execute(f"""CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(vector_id INTEGER PRIMARY KEY, embedding FLOAT[{dimensions}] distance_metric=cosine, group_id TEXT PARTITION KEY, scope TEXT, role_id TEXT)""")
 
     async def init_schema(self, schema_path: str | None = None) -> None:
         conn = await self.connect()
@@ -170,24 +130,11 @@ class DatabaseManager:
             schema_path = str(Path(__file__).parent / "schema.sql")
         with open(schema_path, "r", encoding="utf-8") as f:
             await conn.executescript(f.read())
-
         await conn.execute("DELETE FROM memory_fts")
-        await conn.execute(
-            """INSERT INTO memory_fts
-               (memory_id, group_id, scope, role_id, key, value, memory_type)
-               SELECT id, group_id, scope, role_id, key, value, memory_type FROM memories"""
-        )
+        await conn.execute("""INSERT INTO memory_fts (memory_id, group_id, scope, role_id, key, value, memory_type) SELECT id, group_id, scope, role_id, key, value, memory_type FROM memories""")
         await self._ensure_memory_vector_schema(conn)
-
-        roles = [
-            ("manager", "Manager", "Koordinasi tim, prioritas, dan manajemen tugas"),
-            ("marketing", "Marketing", "Strategi kampanye, riset pasar, dan konten kreatif"),
-            ("advisor", "Advisor", "Analisis keputusan strategis dan risiko"),
-        ]
-        await conn.executemany(
-            "INSERT OR IGNORE INTO agents (role_id, display_name, description) VALUES (?, ?, ?)",
-            roles,
-        )
+        roles = [("manager", "Manager", "Koordinasi tim, prioritas, dan manajemen tugas"), ("marketing", "Marketing", "Strategi kampanye, riset pasar, dan konten kreatif"), ("advisor", "Advisor", "Analisis keputusan strategis dan risiko")]
+        await conn.executemany("INSERT OR IGNORE INTO agents (role_id, display_name, description) VALUES (?, ?, ?)", roles)
         await conn.commit()
 
     @asynccontextmanager

@@ -5,7 +5,8 @@ import math
 import operator
 from typing import Any
 
-from src.tools.registry import tool_registry
+from src.core.config import settings
+from src.tools.registry import ToolCapability, tool_registry
 
 _BIN_OPS: dict[type[ast.operator], Any] = {
     ast.Add: operator.add,
@@ -75,4 +76,22 @@ def ensure_builtin_tools_registered() -> None:
                 "required": ["expression"],
                 "additionalProperties": False,
             },
+            domain="utility",
+            capability=ToolCapability.READ,
+            risk="low",
+            side_effect=False,
+            output_trust="trusted_internal",
+            cost_class="local",
+            retry_safe=True,
+            keywords={"math", "calculate", "calculator", "hitung", "aritmetika", "angka", "numeric"},
         )
+
+    if settings.tool_discovery_enabled:
+        from src.tools.discovery import ensure_discovery_tool_registered
+
+        ensure_discovery_tool_registered()
+
+    if settings.browser_enabled:
+        from src.browser.tools import ensure_browser_tools_registered
+
+        ensure_browser_tools_registered()
