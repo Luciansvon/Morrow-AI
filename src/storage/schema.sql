@@ -1,4 +1,4 @@
--- SQLite schema Morrow v0.2.2
+-- SQLite schema Morrow v0.2.3
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -56,6 +56,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_shared_unique
     ON memories(group_id, key) WHERE scope = 'shared';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_role_unique
     ON memories(group_id, role_id, key) WHERE scope = 'role';
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+    memory_id UNINDEXED,
+    group_id UNINDEXED,
+    scope UNINDEXED,
+    role_id UNINDEXED,
+    key,
+    value,
+    memory_type UNINDEXED,
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_memories_fts_insert
+AFTER INSERT ON memories BEGIN
+    INSERT INTO memory_fts(memory_id, group_id, scope, role_id, key, value, memory_type)
+    VALUES (new.id, new.group_id, new.scope, new.role_id, new.key, new.value, new.memory_type);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memories_fts_update
+AFTER UPDATE ON memories BEGIN
+    DELETE FROM memory_fts WHERE memory_id = old.id;
+    INSERT INTO memory_fts(memory_id, group_id, scope, role_id, key, value, memory_type)
+    VALUES (new.id, new.group_id, new.scope, new.role_id, new.key, new.value, new.memory_type);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memories_fts_delete
+AFTER DELETE ON memories BEGIN
+    DELETE FROM memory_fts WHERE memory_id = old.id;
+END;
+
+CREATE TABLE IF NOT EXISTS memory_vector_map (
+    vector_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id TEXT UNIQUE NOT NULL,
+    content_hash TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS memory_audit (
     id TEXT PRIMARY KEY,
