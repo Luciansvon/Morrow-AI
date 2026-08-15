@@ -1,7 +1,9 @@
-"""Visual analyzer nyata melalui model multimodal OpenRouter, dengan mock deterministik untuk test."""
+"""Visual analyzer melalui OpenRouter, dengan safety caps dan usage attribution."""
 
+import asyncio
 import base64
 from pathlib import Path
+from typing import Any
 
 from src.core.config import settings
 from src.files.vision.base import BaseVisionAnalyzer
@@ -11,22 +13,43 @@ from src.llm.openrouter import openrouter_client
 
 class ModelVisionAnalyzer(BaseVisionAnalyzer):
     @staticmethod
+    def _inspect_image(image_path: str) -> tuple[int, int, str]:
+        from PIL import Image
+
+        with Image.open(image_path) as image:
+            width, height = image.size
+            fmt = image.format or "IMAGE"
+            image.verify()
+        return width, height, fmt
+
+    @staticmethod
     def encode_image_base64(image_path: str) -> str:
-        with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("ascii")
+        with open(image_path, "rb") as handle:
+            return base64.b64encode(handle.read()).decode("ascii")
 
     @staticmethod
     def _mime_for_path(image_path: str) -> str:
         ext = Path(image_path).suffix.lower()
-        return {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(ext, "image/png")
+        return {
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+        }.get(ext, "image/png")
 
-    async def analyze_visual(self, image_path: str, prompt: str = "") -> str | None:
-        from PIL import Image
-
+    async def analyze_visual(
+        self,
+        image_path: str,
+        prompt: str = "",
+        usage_context: dict[str, Any] | None = None,
+    ) -> str | None:
         try:
-            with Image.open(image_path) as image:
-                width, height = image.size
-                fmt = image.format or "IMAGE"
+            width, height, fmt = await asyncio.to_thread(self._inspect_image, image_path)
+            if width * height > settings.max_image_pixels:
+                return (
+                    f"[Vision Error: gambar {width}x{height}px melebihi batas "
+                    f"{settings.max_image_pixels} piksel]"
+                )
         except Exception as exc:
             return f"[Vision Error: {exc}]"
 
@@ -34,7 +57,8 @@ class ModelVisionAnalyzer(BaseVisionAnalyzer):
             return f"[Analisis Visual {fmt} {width}x{height}px: gambar valid]"
 
         mime = self._mime_for_path(image_path)
-        data_url = f"data:{mime};base64,{self.encode_image_base64(image_path)}"
+        encoded = await asyncio.to_thread(self.encode_image_base64, image_path)
+        data_url = f"data:{mime};base64,{encoded}"
         user_prompt = prompt or (
             "Jelaskan isi gambar secara faktual untuk membantu agent Morrow. "
             "Fokus pada teks yang terlihat, objek, tabel/diagram, layout, dan informasi yang relevan. "
@@ -44,6 +68,7 @@ class ModelVisionAnalyzer(BaseVisionAnalyzer):
             model=MODEL_CATALOG["mimo_v2_5"].model_id,
             reasoning_effort="off",
             temperature=0.1,
+            max_tokens=settings.max_vision_output_tokens,
             messages=[
                 {
                     "role": "user",
@@ -53,6 +78,7 @@ class ModelVisionAnalyzer(BaseVisionAnalyzer):
                     ],
                 }
             ],
+            usage_context=usage_context,
         )
         return response.content.strip() or None
 

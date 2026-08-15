@@ -29,6 +29,9 @@ class FastPathRouter:
             if any(re.search(pattern, text_lower) for pattern in patterns):
                 return role, f"Sebutan eksplisit nama agen ({role_id_str})"
 
+        if message.reply_to_role is not None:
+            return message.reply_to_role, "Balasan langsung ke identitas bot Telegram"
+
         if message.reply_to_message_id:
             canonical = message_map_key(message.group_id, message.reply_to_message_id, message.platform)
             row = await db.fetch_one(

@@ -1,5 +1,5 @@
 # 🏗️ Arsitektur & Struktur Proyek — Morrow v0.2
-*Status: `[TERVERIFIKASI]` — Berdasarkan [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md)*
+*Status: `[AKTIF - DIAUDIT v0.2.2]` — Rujukan produk: [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md). Tidak semua Acceptance Contract diklaim terotomasi.*
 
 Dokumen ini menjelaskan arsitektur teknis, susunan komponen, pembagian peran agen, dan batasan teknologi untuk proyek **Morrow** (Asisten Tim AI Pribadi dalam Grup Percakapan).
 
@@ -47,7 +47,7 @@ Berdasarkan bagian `TC-001` s.d. `TC-011` pada PRD:
 * **Penyimpanan Data Terstruktur:** Menggunakan **SQLite** untuk menyimpan data tugas, konfigurasi, dan memori terstruktur.
 * **Penyimpanan Berkas Asli:** Berkas fisik disimpan terpisah di sistem penyimpanan berkas (*filesystem/object storage*), bukan dicampur di dalam memori AI.
 * **Penyimpanan Vektor:** Tidak menggunakan basis data vektor (*vector DB*) untuk kebutuhan MVP agar sistem tetap sederhana dan andal.
-* **Pengendalian Konkurensi:** Penguncian dan penanganan pesan dilakukan per-grup/per-utas percakapan, tanpa kunci global (*no global lock*) yang dapat memblokir grup lain.
+* **Pengendalian Konkurensi:** Orkestrasi pesan menggunakan lock per-grup sehingga pekerjaan agen di grup berbeda tidak diserialkan secara global. SQLite memakai lock transaksi proses yang singkat untuk menjaga satu koneksi async tetap konsisten; lock database tidak mencakup panggilan LLM, Telegram, atau I/O jaringan.
 * **Format Berkas yang Didukung:** `PDF`, `DOCX`, `XLSX`, `CSV`, `TXT`, `MD`, `PPTX`, `PNG`, `JPG/JPEG`, `WEBP`.
 
 ---
@@ -97,14 +97,16 @@ Event ➡️ Adapter ➡️ Normalize/Access Check ➡️ Dedup ➡️ Attachmen
 ```
 
 ### B. Alokasi Model Berbasis Beban Kerja (`ModelPolicy.resolve`)
+
+> **Catatan operasional:** harga provider bersifat dinamis dan bukan kontrak arsitektur. ID model serta kebijakan routing yang berlaku ditentukan oleh `src/llm/model_catalog.py` dan `src/llm/model_policy.py`; biaya aktual dicatat melalui usage ledger.
 1. **Model Harian (Daily Drivers - 2 Model):**
-   - **`manager` (Planning):** `DeepSeek V4 Flash 0731` ($0.14/$0.28 per 1M token) dengan penalaran dinamis (*low/high/xhigh*).
-   - **`marketing` (Konten/Visual):** `MiMo-V2.5` ($0.14/$0.28 per 1M token), native multimodal teks dan gambar.
+   - **`manager` (Planning):** `DeepSeek V4 Flash 0731` dengan penalaran dinamis (*low/high/xhigh*).
+   - **`marketing` (Konten/Visual):** `MiMo-V2.5`, native multimodal teks dan gambar.
    - **`advisor` (Normal):** `DeepSeek V4 Flash 0731` (*reasoning: high*).
    - **`router` & `memory_judge`:** `MiMo-V2.5 (non-thinking)` untuk klasifikasi JSON instan.
 2. **Model Spesialis & Eskalasi (2 Model):**
-   - **`marketing` (Creative Pro):** `MiniMax M3` ($0.30/$1.20 per 1M token) untuk kampanye besar dan spreadsheet rumit.
-   - **`advisor` (Critical Decision):** `DeepSeek V4-Pro-0813` ($1.32/$3.96 per 1M token) khusus keputusan berisiko tinggi dan sulit dibatalkan (*irreversible*).
+   - **`marketing` (Creative Pro):** `MiniMax M3` untuk kampanye besar dan spreadsheet rumit.
+   - **`advisor` (Critical Decision):** `DeepSeek V4-Pro-0813` khusus keputusan berisiko tinggi dan sulit dibatalkan (*irreversible*).
 3. **Cadangan & Peninjau Independen (2 Model):**
    - **Cadangan Darurat (*Provider Fallback*):** `GPT-5.6 Luna` saat DeepSeek mengalami *outage* atau rate limit.
    - **Peninjau Kedua (*Cross-Check*):** `Claude Sonnet 5` untuk keputusan hukum/bisnis raksasa.

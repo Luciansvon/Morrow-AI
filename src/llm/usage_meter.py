@@ -54,8 +54,14 @@ class UsageMeter:
         return float(row["total"] if row else 0.0)
 
     @classmethod
-    async def check_thread_budget(cls, group_id: str, thread_id: str | None = None) -> bool:
-        return await cls.spent_for_thread(group_id, thread_id) < settings.budget_thread_total
+    async def check_thread_budget(
+        cls,
+        group_id: str,
+        thread_id: str | None = None,
+        limit: float | None = None,
+    ) -> bool:
+        budget = settings.budget_thread_total if limit is None else limit
+        return await cls.spent_for_thread(group_id, thread_id) < budget
 
 
 usage_meter = UsageMeter()

@@ -114,6 +114,7 @@ class NormalizedMessage(BaseModel):
     text: str = ""
     platform: str = "telegram"
     reply_to_message_id: str | None = None
+    reply_to_role: RoleID | None = None
     received_by_bot_role: RoleID | None = None
     bot_identity: str | None = None
     attachments: list[AttachmentInfo] = Field(default_factory=list)

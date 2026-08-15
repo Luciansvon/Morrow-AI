@@ -1,4 +1,4 @@
-"""Pengujian Kontrak Penerimaan AC-013 & AC-022: External Approval & Parameter Hash Mutation."""
+"""Approval safety regression tests."""
 
 import pytest
 
@@ -8,8 +8,8 @@ from src.tools.executor import tool_executor
 
 
 @pytest.mark.asyncio
-async def test_ac013_external_action_requires_user_approval():
-    """AC-013: Aksi luar (kirim email) ditolak dieksekusi langsung tanpa izin user."""
+async def test_external_action_requires_user_approval():
+    """Aksi luar ditolak jika belum mendapat izin user."""
     res = await tool_executor.execute_tool(
         tool_name="send_email",
         parameters={"to": "client@example.com", "subject": "Proposal"},
@@ -20,8 +20,8 @@ async def test_ac013_external_action_requires_user_approval():
 
 
 @pytest.mark.asyncio
-async def test_ac022_parameter_mutation_invalidates_approval():
-    """AC-022: Perubahan isi parameter setelah approval diajukan membatalkan izin (Parameter Mutation Protection)."""
+async def test_parameter_mutation_invalidates_approval():
+    """Perubahan parameter setelah request dibuat membatalkan izin lama."""
     initial_params = {"to": "client@example.com", "amount": 1000}
     req = await approval_gateway.create_request(
         group_id="group_core_team_01",

@@ -52,8 +52,8 @@ async def test_memory_isolated_between_groups():
 
 
 @pytest.mark.asyncio
-async def test_missing_tool_never_reports_fake_success():
-    result = await tool_executor.execute_tool("definitely_missing_tool", {"x": 1})
+async def test_missing_known_tool_never_reports_fake_success():
+    result = await tool_executor.execute_tool("read_attachment", {"file_id": "x"})
     assert result["success"] is False
     assert result["error"] == "TOOL_NOT_REGISTERED"
 

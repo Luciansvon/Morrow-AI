@@ -9,6 +9,7 @@ from src.agents.advisor import advisor_agent
 from src.agents.manager import manager_agent
 from src.agents.marketing import marketing_agent
 from src.approval.gateway import approval_gateway
+from src.core.config import settings
 from src.core.normalizer import MessageNormalizer
 from src.core.types import AddressingType, MessageIntent, NormalizedMessage, RoleID, TaskStatus
 from src.llm.usage_meter import usage_meter
@@ -24,8 +25,7 @@ from src.storage.sqlite import db
 from src.tasks.handoff import task_handoff
 from src.tasks.service import task_service
 
-
-APPROVAL_RE = re.compile(r"^/(approve|reject)(?:@\w+)?\s+(appr_[A-Za-z0-9_-]+)\s*$", re.I)
+APPROVAL_RE = re.compile(r"^/(approve|reject)(?:@\w+)?\s+(appr_[A-Za-z0-9_-]+)\s*$", re.IGNORECASE)
 
 
 class SystemOrchestrator:
@@ -105,11 +105,12 @@ class SystemOrchestrator:
         targets: list[RoleID],
         coordinator: RoleID,
     ) -> str:
-        unique_targets = []
+        unique_targets: list[RoleID] = []
         for role in [coordinator, *targets]:
             if role not in unique_targets:
                 unique_targets.append(role)
         unique_targets = unique_targets[:3]
+
         task = await task_service.create_task(
             group_id=message.group_id,
             title=(message.text.strip() or "Kolaborasi tim")[:120],
@@ -121,67 +122,128 @@ class SystemOrchestrator:
         analysis = task_analyzer.analyze(message.text, coordinator, len(message.attachments))
         contributions: list[tuple[RoleID, str]] = []
         last_sent = message.message_id
+        stop_reason: str | None = None
+        synthesized = len(unique_targets) <= 1
 
-        for role in unique_targets:
-            if not await usage_meter.check_thread_budget(message.group_id, thread_id):
-                break
-            allowed, _, _ = await loop_guard.can_continue_discussion(thread_id, message.group_id, role)
-            if not allowed:
-                break
-            if role == coordinator:
-                work_msg = message
-                handoff = {"mode": "discussion_coordinator", "task_id": task.id}
-            else:
-                context = "\n\n".join(f"{r.value}: {text}" for r, text in contributions)
-                work_msg = message.model_copy(update={
-                    "message_id": f"collab_{role.value}_{message.message_id}",
-                    "text": f"Instruksi pengguna:\n{message.text}\n\nKontribusi tim sejauh ini:\n{context}",
-                    "reply_to_message_id": last_sent,
-                    "event_claimed": True,
-                })
-                handoff = {"mode": "discussion_contributor", "task_id": task.id, "coordinator": coordinator.value}
-            response = await self._agents[role].execute(
-                work_msg,
-                workload=analysis.workload,
-                risk_level=analysis.risk_level,
-                handoff_payload=handoff,
-                task_id=task.id,
-                thread_id=thread_id,
-            )
-            last_sent = await self._send(message, role, response, last_sent)
-            contributions.append((role, response))
+        try:
+            for role in unique_targets:
+                if not await usage_meter.check_thread_budget(message.group_id, thread_id):
+                    stop_reason = "budget thread tercapai"
+                    break
+                allowed, reason, _ = await loop_guard.can_continue_discussion(
+                    thread_id,
+                    message.group_id,
+                    role,
+                )
+                if not allowed:
+                    stop_reason = reason or "loop guard menghentikan diskusi"
+                    break
 
-        final_text = contributions[-1][1] if contributions else "Kolaborasi tidak dapat dijalankan."
-        # Jika masih ada satu turn, coordinator menyintesis kontribusi agar user tidak menerima tiga jawaban terpisah tanpa penutup.
-        if len(contributions) > 1 and await usage_meter.check_thread_budget(message.group_id, thread_id):
-            allowed, _, _ = await loop_guard.can_continue_discussion(thread_id, message.group_id, coordinator)
-            if allowed:
-                context = "\n\n".join(f"{role.value.upper()}:\n{text}" for role, text in contributions)
-                synth_msg = message.model_copy(update={
-                    "message_id": f"synthesis_{message.message_id}",
-                    "text": f"Instruksi awal:\n{message.text}\n\nKontribusi tim:\n{context}\n\nSintesis hasil akhir, hilangkan duplikasi dan nyatakan next action.",
-                    "reply_to_message_id": last_sent,
-                    "event_claimed": True,
-                })
-                final_text = await self._agents[coordinator].execute(
-                    synth_msg,
+                if role == coordinator:
+                    work_msg = message
+                    handoff = {"mode": "discussion_coordinator", "task_id": task.id}
+                else:
+                    context = "\n\n".join(
+                        f"{contributor.value}: {text}" for contributor, text in contributions
+                    )
+                    work_msg = message.model_copy(
+                        update={
+                            "message_id": f"collab_{role.value}_{message.message_id}",
+                            "text": (
+                                f"Instruksi pengguna:\n{message.text}\n\n"
+                                f"Kontribusi tim sejauh ini:\n{context}"
+                            ),
+                            "reply_to_message_id": last_sent,
+                            "event_claimed": True,
+                        }
+                    )
+                    handoff = {
+                        "mode": "discussion_contributor",
+                        "task_id": task.id,
+                        "coordinator": coordinator.value,
+                    }
+
+                response = await self._agents[role].execute(
+                    work_msg,
                     workload=analysis.workload,
                     risk_level=analysis.risk_level,
-                    handoff_payload={"mode": "final_synthesis", "task_id": task.id},
+                    handoff_payload=handoff,
                     task_id=task.id,
                     thread_id=thread_id,
                 )
-                await self._send(message, coordinator, final_text, last_sent)
+                last_sent = await self._send(message, role, response, last_sent)
+                contributions.append((role, response))
 
-        await task_service.update_task_status(task.id, TaskStatus.DONE)
-        await memory_judge.evaluate_and_commit(
-            actor_id=message.sender_id,
-            role_id=coordinator,
-            group_id=message.group_id,
-            user_text=message.text,
-            assistant_text=final_text,
-        )
-        return final_text
+            all_targets_completed = len(contributions) == len(unique_targets)
+            final_text = (
+                contributions[-1][1]
+                if contributions
+                else "Kolaborasi belum menghasilkan kontribusi."
+            )
+
+            if all_targets_completed and len(contributions) > 1:
+                if not await usage_meter.check_thread_budget(message.group_id, thread_id):
+                    stop_reason = "budget thread tercapai sebelum sintesis"
+                else:
+                    allowed, reason, _ = await loop_guard.can_continue_discussion(
+                        thread_id,
+                        message.group_id,
+                        coordinator,
+                    )
+                    if not allowed:
+                        stop_reason = reason or "loop guard menghentikan sintesis"
+                    else:
+                        context = "\n\n".join(
+                            f"{role.value.upper()}:\n{text}" for role, text in contributions
+                        )
+                        synth_msg = message.model_copy(
+                            update={
+                                "message_id": f"synthesis_{message.message_id}",
+                                "text": (
+                                    f"Instruksi awal:\n{message.text}\n\n"
+                                    f"Kontribusi tim:\n{context}\n\n"
+                                    "Sintesis hasil akhir, hilangkan duplikasi dan nyatakan "
+                                    "next action."
+                                ),
+                                "reply_to_message_id": last_sent,
+                                "event_claimed": True,
+                            }
+                        )
+                        final_text = await self._agents[coordinator].execute(
+                            synth_msg,
+                            workload=analysis.workload,
+                            risk_level=analysis.risk_level,
+                            handoff_payload={"mode": "final_synthesis", "task_id": task.id},
+                            task_id=task.id,
+                            thread_id=thread_id,
+                        )
+                        await self._send(message, coordinator, final_text, last_sent)
+                        synthesized = True
+
+            complete = all_targets_completed and synthesized
+            if complete:
+                await task_service.update_task_status(task.id, TaskStatus.DONE)
+                if await usage_meter.check_thread_budget(message.group_id, thread_id):
+                    await memory_judge.evaluate_and_commit(
+                        actor_id=message.sender_id,
+                        role_id=coordinator,
+                        group_id=message.group_id,
+                        user_text=message.text,
+                        assistant_text=final_text,
+                        thread_id=thread_id,
+                    )
+                return final_text
+
+            await task_service.update_task_status(task.id, TaskStatus.WAITING_USER)
+            notice = (
+                "Kolaborasi dijeda sebelum hasil akhir lengkap"
+                + (f": {stop_reason}." if stop_reason else ".")
+            )
+            await self._send(message, coordinator, notice, last_sent)
+            return notice
+        except Exception:
+            await task_service.update_task_status(task.id, TaskStatus.BLOCKED)
+            raise
 
     async def handle_incoming_message(self, message: NormalizedMessage) -> str | None:
         allowed, _ = MessageNormalizer.check_access(message)
@@ -199,9 +261,10 @@ class SystemOrchestrator:
                 return approval_result
 
             addressing = await addressing_detector.detect(message)
-            if addressing.allow_multi_response and addressing.intent == MessageIntent.SOCIAL:
+            if addressing.intent == MessageIntent.SOCIAL:
+                targets = addressing.target_agents or [RoleID.MANAGER]
                 responses = []
-                for role in addressing.target_agents:
+                for role in targets:
                     text = social_response(role, message.text)
                     await self._send(message, role, text)
                     responses.append(f"[{role.value}]: {text}")
@@ -228,6 +291,7 @@ class SystemOrchestrator:
                 primary_role, _ = await role_router.route_message(message)
 
             analysis = task_analyzer.analyze(message.text, primary_role, len(message.attachments))
+            thread_id = f"thr_{message.group_id}_{message.message_id}"
             # Jika routing normal membutuhkan >1 spesialis, gunakan diskusi bounded daripada handoff berantai yang mengaburkan ownership.
             if len(analysis.collaborators) > 1:
                 return await self._run_collective_work(
@@ -236,10 +300,20 @@ class SystemOrchestrator:
                     primary_role,
                 )
 
+            if not await usage_meter.check_thread_budget(
+                message.group_id,
+                thread_id,
+                limit=settings.budget_normal_task,
+            ):
+                notice = "Permintaan dijeda karena budget task sudah tercapai sebelum eksekusi agent."
+                await self._send(message, primary_role, notice)
+                return notice
+
             response = await self._agents[primary_role].execute(
                 message,
                 workload=analysis.workload,
                 risk_level=analysis.risk_level,
+                thread_id=thread_id,
             )
             sent_id = await self._send(message, primary_role, response)
             final_text = response
@@ -262,32 +336,53 @@ class SystemOrchestrator:
                     context_payload={"initial_instruction": message.text},
                 )
                 if ok:
-                    delegated = message.model_copy(update={
-                        "message_id": f"handoff_{message.message_id}",
-                        "text": f"Instruksi awal pengguna:\n{message.text}\n\nRespons awal {primary_role.value}:\n{response}",
-                        "reply_to_message_id": sent_id,
-                        "event_claimed": True,
-                    })
-                    final_text = await self._agents[target].execute(
-                        delegated,
-                        workload=analysis.workload,
-                        risk_level=analysis.risk_level,
-                        handoff_payload={"from_role": primary_role.value, "task_id": task.id},
-                        task_id=task.id,
+                    delegated = message.model_copy(
+                        update={
+                            "message_id": f"handoff_{message.message_id}",
+                            "text": (
+                                f"Instruksi awal pengguna:\n{message.text}\n\n"
+                                f"Respons awal {primary_role.value}:\n{response}"
+                            ),
+                            "reply_to_message_id": sent_id,
+                            "event_claimed": True,
+                        }
                     )
-                    await self._send(message, target, final_text, sent_id)
+                    try:
+                        final_text = await self._agents[target].execute(
+                            delegated,
+                            workload=analysis.workload,
+                            risk_level=analysis.risk_level,
+                            handoff_payload={
+                                "from_role": primary_role.value,
+                                "task_id": task.id,
+                            },
+                            task_id=task.id,
+                            thread_id=thread_id,
+                        )
+                        await self._send(message, target, final_text, sent_id)
+                    except Exception:
+                        await task_service.update_task_status(task.id, TaskStatus.BLOCKED)
+                        raise
                     final_role = target
                     await task_service.update_task_status(task.id, TaskStatus.DONE)
                 else:
                     await task_service.update_task_status(task.id, TaskStatus.BLOCKED)
                     final_text = response + f"\n\nHandoff tidak dijalankan: {reason}"
 
-            if addressing.intent != MessageIntent.SOCIAL:
+            if (
+                addressing.intent != MessageIntent.SOCIAL
+                and await usage_meter.check_thread_budget(
+                    message.group_id,
+                    thread_id,
+                    limit=settings.budget_normal_task,
+                )
+            ):
                 await memory_judge.evaluate_and_commit(
                     actor_id=message.sender_id,
                     role_id=final_role,
                     group_id=message.group_id,
                     user_text=message.text,
                     assistant_text=final_text,
+                    thread_id=thread_id,
                 )
             return final_text

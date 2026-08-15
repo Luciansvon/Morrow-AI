@@ -8,6 +8,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+from src import __version__
 from src.adapters.cli import CLIAdapter
 from src.adapters.telegram import TelegramMultiBotAdapter
 from src.core.config import settings
@@ -18,7 +19,7 @@ from src.storage.sqlite import db
 
 async def main() -> None:
     print("=" * 60)
-    print("  🚀 Morrow v0.2.1")
+    print(f"  🚀 Morrow v{__version__}")
     print("=" * 60)
 
     settings.validate_openrouter_key()
@@ -42,8 +43,8 @@ async def main() -> None:
         adapter = CLIAdapter()
 
     orchestrator = SystemOrchestrator(adapter)
-    await adapter.start()
     try:
+        await adapter.start()
         if isinstance(adapter, CLIAdapter):
             while adapter._running:
                 try:
@@ -64,6 +65,7 @@ async def main() -> None:
                 )
         else:
             while adapter._running:
+                adapter.raise_if_unhealthy()
                 await asyncio.sleep(1)
     finally:
         await adapter.stop()

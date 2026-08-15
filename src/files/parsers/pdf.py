@@ -1,44 +1,54 @@
-"""Parser dokumen PDF berbasis text layer (PyMuPDF / fitz & pypdf)."""
+"""Parser dokumen PDF berbasis text layer (PyMuPDF / pypdf)."""
 
+from src.core.config import settings
 
 
 class PDFParser:
-    """Parser untuk mengekstrak teks struktural dari dokumen PDF."""
+    @staticmethod
+    def _join_bounded(parts: list[str]) -> str:
+        return "\n".join(parts)[: settings.max_document_extract_chars].strip()
 
     @staticmethod
     def parse_pdf(file_path: str) -> tuple[str | None, bool]:
-        """
-        Mengekstrak teks dari PDF jika memiliki text layer yang valid.
-        Mengembalikan (extracted_text, has_text_layer).
-        """
-        text_content = []
+        limit = settings.max_document_extract_chars
         try:
-            import fitz  # PyMuPDF
-            doc = fitz.open(file_path)
-            total_chars = 0
-            for page in doc:
-                text = page.get_text()
-                total_chars += len(text.strip())
-                text_content.append(text)
-            doc.close()
+            import fitz
 
-            # Jika total karakter sangat sedikit (< 20 karakter per halaman), kemungkinan hasil scan
-            has_text_layer = total_chars >= 20
-            full_text = "\n".join(text_content).strip()
-            return full_text if full_text else None, has_text_layer
+            text_content: list[str] = []
+            total_chars = 0
+            doc = fitz.open(file_path)
+            try:
+                for page in doc:
+                    text = page.get_text()
+                    if text:
+                        remaining = max(0, limit - total_chars)
+                        text_content.append(text[:remaining])
+                        total_chars += min(len(text), remaining)
+                    if total_chars >= limit:
+                        break
+            finally:
+                doc.close()
+            full_text = PDFParser._join_bounded(text_content)
+            return full_text if full_text else None, total_chars >= 20
         except Exception:
             pass
 
-        # Fallback ke pypdf
         try:
             import pypdf
+
+            text_content = []
+            total_chars = 0
             reader = pypdf.PdfReader(file_path)
             for page in reader.pages:
-                t = page.extract_text()
-                if t:
-                    text_content.append(t)
-            full_text = "\n".join(text_content).strip()
-            return full_text if full_text else None, len(full_text) >= 20
+                text = page.extract_text() or ""
+                if text:
+                    remaining = max(0, limit - total_chars)
+                    text_content.append(text[:remaining])
+                    total_chars += min(len(text), remaining)
+                if total_chars >= limit:
+                    break
+            full_text = PDFParser._join_bounded(text_content)
+            return full_text if full_text else None, total_chars >= 20
         except Exception:
             return None, False
 

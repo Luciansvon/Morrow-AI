@@ -1,4 +1,4 @@
-"""Pengujian Kontrak Penerimaan AC-007, AC-008, AC-009, AC-018: Pemrosesan Berkas & Routing Lampiran."""
+"""File parsing and intake regression tests."""
 
 
 import pytest
@@ -8,8 +8,8 @@ from src.files.parsers.xlsx import spreadsheet_parser
 
 
 @pytest.mark.asyncio
-async def test_ac007_xlsx_and_csv_structural_parsing(tmp_path):
-    """AC-007: Spreadsheet diparsing langsung menggunakan parser lokal."""
+async def test_csv_structural_parsing(tmp_path):
+    """CSV diparsing langsung menggunakan parser lokal."""
     # Buat file CSV contoh
     csv_file = tmp_path / "sales.csv"
     csv_file.write_text("Bulan,Penjualan,Target\nJanuari,100,80\nFebruari,150,120\n", encoding="utf-8")
@@ -22,8 +22,8 @@ async def test_ac007_xlsx_and_csv_structural_parsing(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ac009_unsupported_file_handling(tmp_path):
-    """AC-009: Berkas format tidak didukung (misal .exe) ditandai tidak didukung tanpa crash."""
+async def test_unsupported_file_handling(tmp_path):
+    """Format tidak didukung ditolak tanpa crash."""
     content = b"MZ\x90\x00\x03\x00\x00\x00"
     att = await file_intake.process_incoming_file("malicious.exe", content)
     assert att.is_supported is False
@@ -31,8 +31,8 @@ async def test_ac009_unsupported_file_handling(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ac018_image_file_intake(tmp_path):
-    """AC-018: Berkas gambar (PNG/JPG) didukung dan masuk ke pipeline multimodal."""
+async def test_image_file_intake(tmp_path):
+    """PNG valid diterima oleh intake."""
     import io
 
     from PIL import Image

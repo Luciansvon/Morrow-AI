@@ -74,6 +74,8 @@ class OpenRouterProvider(BaseLLMProvider):
             self._client = AsyncOpenAI(
                 api_key=key,
                 base_url=self._get_base_url(),
+                timeout=settings.openrouter_timeout_seconds,
+                max_retries=0,
                 default_headers={
                     "HTTP-Referer": "https://github.com/Luciansvon/Morrow-AI",
                     "X-Title": "Morrow",
@@ -89,6 +91,7 @@ class OpenRouterProvider(BaseLLMProvider):
         response_format: dict[str, Any] | None,
         tools: list[dict[str, Any]] | None,
         reasoning_effort: str,
+        max_tokens: int | None = None,
     ) -> Any:
         kwargs: dict[str, Any] = {
             "model": model,
@@ -99,6 +102,8 @@ class OpenRouterProvider(BaseLLMProvider):
             kwargs["response_format"] = response_format
         if tools:
             kwargs["tools"] = tools
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
         if reasoning_effort and reasoning_effort not in {"off", "none"}:
             kwargs["extra_body"] = {
                 "reasoning": {"effort": reasoning_effort, "exclude": True}
@@ -145,6 +150,7 @@ class OpenRouterProvider(BaseLLMProvider):
         temperature: float = 0.7,
         response_format: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
         usage_context: dict[str, str | None] | None = None,
     ) -> LLMResponse:
         started = time.monotonic()
@@ -184,6 +190,7 @@ class OpenRouterProvider(BaseLLMProvider):
             "response_format": response_format,
             "tools": tools,
             "reasoning_effort": reasoning_effort,
+            "max_tokens": max_tokens,
         }
         try:
             res = await self._call_with_retry(**call_kwargs)

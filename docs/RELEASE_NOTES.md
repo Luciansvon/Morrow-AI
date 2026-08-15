@@ -1,29 +1,36 @@
-# 🚀 Catatan Rilis Versi (Release Notes) — Morrow
+# Release Notes - Morrow
 
-Dokumen ini mencatat seluruh riwayat versi, status perubahan, dan kesiapan rilis untuk sistem **Morrow**.
+## [v0.2.2] - 2026-08-15
+**Status:** reliability-hardening candidate, wajib lolos CI sebelum merge ke `main`.
 
----
+Rilis ini berasal dari audit source 5-pass. Fokusnya bukan menambah gimmick baru, melainkan menutup failure mode yang bisa membuat Morrow salah routing, salah mengklaim delivery, salah menandai task selesai, mengulang side effect, atau mengonsumsi resource file secara tak terbatas.
+
+Perubahan utama:
+- Telegram sender fail-fast, tanpa message ID palsu.
+- Explicit multi-agent addressing mendukung registered bot username dan tidak kalah oleh object quantifier `semua`.
+- Collective work hanya `done` bila kontribusi/sintesis yang diwajibkan benar-benar selesai.
+- Approval transitions atomic; execution claim dan idempotency diperketat.
+- Tool policy fail-closed untuk action yang belum diklasifikasikan.
+- OOXML/image/spreadsheet processing diberi resource caps.
+- Vision usage diatribusikan ke group/thread budget.
+- Parsing/validasi file sinkron dipindah ke worker thread agar satu upload berat tidak membekukan event loop semua grup.
+- Reply routing dapat memakai identitas bot Telegram langsung, sehingga reply ke chunk awal pesan panjang tetap kembali ke role yang benar.
+- Single-connection SQLite diberi transaction boundary yang mencegah coroutine lain ikut meng-commit transaksi aktif; legacy duplicate memory juga dideduplikasi sebelum unique index dibuat.
+- Context dan output LLM dibatasi eksplisit (message/memory/tasks/output token), routing budget memakai pre-call cost estimate, dan normal task membawa thread cost attribution.
+- Attachment storage mengikuti runtime `STORAGE_DIR` secara lazy.
+- Task history API ditambahkan untuk status terminal.
+- Source version diselaraskan ke `0.2.2`.
+- CI tidak lagi auto-fix source secara diam-diam dan menguji Python 3.11 serta 3.12.
+- Klaim lama “22 acceptance contracts verified 100%” dicabut karena test sebelumnya memetakan beberapa AC ke perilaku yang berbeda dari PRD.
+
+### Acceptance status
+Automated tests tetap memverifikasi access control, routing, dedup, handoff/anti-cycle, memory isolation/audit, file intake/parser, loop guard, approval safety, concurrency, model request wiring, dan regression hardening. Kontrak yang bergantung pada OQ-002/OQ-003/OQ-004/OQ-005 atau connector eksternal nyata tetap dicatat sebagai pending, bukan dipalsukan hijau.
+
+## [v0.2.1] - 2026-08-15
+Reliability foundation untuk 3 Telegram bot dalam satu backend: atomic event dedup, group-scoped memory, attachment pre-routing, model policy/reasoning pass-through, approval infrastructure, durable tool idempotency, dan regression suite.
 
 ## [v0.2.0] - 2026-08-15
-* **Status:** `[RELEASED]` — *Implementasi Penuh & 22 Acceptance Contracts Terverifikasi 100%*
-* **Rujukan Dokumen:** [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md)
-
-### 1. Ringkasan Rilis
-Morrow v0.2 telah selesai dibangun secara penuh menggunakan arsitektur modular Domain Layer (`src/core`, `src/agents`, `src/routing`, `src/skills`, `src/tools`, `src/tasks`, `src/memory`, `src/llm`, `src/files`, `src/safety`, `src/approval`, `src/storage`, `src/adapters`). Seluruh 22 Kontrak Penerimaan (AC-001 s.d. AC-022) berhasil lolos uji 100% pada suite pengujian otomatis (`pytest`).
-
-### 2. Kapabilitas & Invarian Terverifikasi
-* **Multi-Agent Runtime (`INV-001`, `AC-019`):** 3 agen mandiri (`manager`, `marketing`, `advisor`) dengan perakitan konteks terisolasi tanpa kebocoran riwayat mentah.
-* **Deterministic Fast Path & Semantic Router (`INV-002`, `INV-003`, `AC-002`, `AC-003`, `AC-004`):** Penyaluran pesan ke TEPAT SATU agen utama dan pelacakan balasan pesan durable via tabel `message_agent_map`.
-* **Ekstraksi Berkas Pra-Routing (`INV-007`, `AC-007`, `AC-008`, `AC-009`, `AC-018`):** Pembacaan berkas (XLSX, CSV, PDF, DOCX, PPTX, gambar) dilakukan sebelum pesan masuk ke router.
-* **Skill Modular & Eksekusi Idempoten (`INV-004`, `AC-005`, `AC-016`, `AC-017`):** Dukungan pemuatan `SKILL.md`, isolasi kelayakan peran, dan eksekutor tool idempoten.
-* **Delegasi Tugas & Anti-Cycle Guard (`INV-005`, `INV-013`, `AC-006`):** Siklus tugas internal dan pelarangan pengalihan tugas berulang ke agen yang pernah mencoba di rantai yang sama.
-* **Memori Multi-Lapis & Audit History (`INV-006`, `AC-010`, `AC-012`):** Pemisahan memori peran vs memori bersama, serta pencatatan jejak riwayat perubahan keputusan lampau.
-* **Gerbang Izin Aksi Luar & Anti-Mutasi (`INV-009`, `AC-013`, `AC-022`):** Wajib persetujuan eksplisit pengguna sebelum aksi luar dijalankan, dengan pembatalan otomatis jika parameter diubah.
-* **Safety, Anti-Loop, & Concurrency Lock (`INV-008`, `INV-010`, `INV-014`, `INV-015`, `AC-001`, `AC-011`, `AC-014`, `AC-015`, `AC-020`, `AC-021`):** Pembatas 4 putaran diskusi otomatis, deteksi konflik instruksi manusia, kunci konkurensi per-grup (tanpa global lock), dan deduplikasi event masuk.
-
-
----
+Implementasi awal arsitektur modular Morrow. Catatan historis rilis ini sebelumnya menyatakan seluruh 22 acceptance contract sudah terverifikasi; audit v0.2.2 menemukan klaim tersebut terlalu luas dan mengoreksinya.
 
 ## [v0.1.0] - 2026-08-14
-* **Status:** `[DEPRECATED]` (Telah diperbarui menjadi v0.2)
-* **Keterangan:** Dokumen inisiasi awal konsep tim AI pribadi Morrow.
+Dokumen inisiasi awal konsep tim AI pribadi Morrow.

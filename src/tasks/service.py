@@ -16,6 +16,8 @@ class TaskService:
         dependencies: list[str] | None = None,
         max_retries: int = 3,
     ) -> TaskModel:
+        if max_retries < 1:
+            raise ValueError("max_retries harus minimal 1")
         task_id = f"task_{uuid.uuid4().hex[:10]}"
         deps = dependencies or []
         if task_id in deps:
@@ -55,16 +57,28 @@ class TaskService:
 
     @staticmethod
     async def record_failure(task_id: str) -> TaskStatus:
-        task = await TaskService.get_task(task_id)
-        if not task:
-            raise ValueError(f"Task '{task_id}' tidak ditemukan")
-        new_count = task.retry_count + 1
-        new_status = TaskStatus.BLOCKED if new_count < task.max_retries else TaskStatus.FAILED
-        await db.execute(
-            "UPDATE tasks SET retry_count=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (new_count, new_status.value, task_id),
-        )
-        return new_status
+        async with db.transaction() as conn:
+            cursor = await conn.execute(
+                "SELECT retry_count, max_retries FROM tasks WHERE id=?",
+                (task_id,),
+            )
+            raw = await cursor.fetchone()
+            if not raw:
+                raise ValueError(f"Task '{task_id}' tidak ditemukan")
+            new_count = int(raw["retry_count"]) + 1
+            max_retries = int(raw["max_retries"] or 3)
+            new_status = (
+                TaskStatus.BLOCKED
+                if new_count < max_retries
+                else TaskStatus.FAILED
+            )
+            await conn.execute(
+                """UPDATE tasks
+                   SET retry_count=?, status=?, updated_at=CURRENT_TIMESTAMP
+                   WHERE id=?""",
+                (new_count, new_status.value, task_id),
+            )
+            return new_status
 
     @staticmethod
     async def get_task(task_id: str) -> TaskModel | None:
@@ -98,6 +112,21 @@ class TaskService:
             attempted_agents=attempted, retry_count=row["retry_count"],
             max_retries=row.get("max_retries", 3) or 3,
         )
+
+    @staticmethod
+    async def list_task_history(group_id: str) -> list[TaskModel]:
+        rows = await db.fetch_all(
+            """SELECT id FROM tasks WHERE group_id=?
+               AND status IN ('done','failed','cancelled')
+               ORDER BY updated_at DESC, created_at DESC""",
+            (group_id,),
+        )
+        result: list[TaskModel] = []
+        for row in rows:
+            task = await TaskService.get_task(row["id"])
+            if task:
+                result.append(task)
+        return result
 
     @staticmethod
     async def list_active_tasks(group_id: str) -> list[TaskModel]:

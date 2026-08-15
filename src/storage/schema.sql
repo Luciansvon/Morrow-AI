@@ -1,4 +1,4 @@
--- SQLite schema Morrow v0.2.1
+-- SQLite schema Morrow v0.2.2
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,

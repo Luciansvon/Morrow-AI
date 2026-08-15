@@ -1,14 +1,15 @@
 # 🧪 Panduan Pengujian (Testing Guide) — Morrow v0.2
-*Status: `[TERVERIFIKASI]` — Berdasarkan Kontrak Penerimaan (Acceptance Contract) [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md)*
+*Status: `[CONTRACT-ORIENTED / DIAUDIT v0.2.2]` — Skenario diturunkan dari [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md). Daftar ini tidak berarti seluruh AC sudah memiliki automated evidence.*
 
-Dokumen ini berisi daftar prosedur dan skenario pengujian untuk memverifikasi bahwa implementasi sistem Morrow memenuhi seluruh persyaratan produk (*Product Requirements*).
+Dokumen ini berisi prosedur dan skenario pengujian untuk memverifikasi persyaratan produk Morrow. Status tiap kontrak harus berasal dari bukti uji yang benar-benar menguji perilaku kontrak tersebut, bukan hanya dari nama atau nomor test.
 
 ---
 
 ## 1. Prinsip Utama Pengujian (*Evidence-First*)
 * Dilarang mengklaim pengujian "berhasil" tanpa bukti eksekusi nyata (*terminal output* atau hasil status tes).
-* Seluruh hasil uji coba wajib dicatat ke dalam [`docs/WORKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/WORKLOG.md).
+* Hasil audit/rilis penting dicatat di [`WORKLOG.md`](WORKLOG.md), sedangkan bukti otomatis utama berasal dari output CI/test run.
 * Setiap skenario pengujian di bawah ini terhubung langsung dengan ID Kontrak Penerimaan (*Acceptance Contract ID*).
+* Tidak boleh ada test agregat yang menandai AC sebagai `PASSED` tanpa mengeksekusi assertion yang relevan terhadap definisi AC tersebut.
 
 ---
 
