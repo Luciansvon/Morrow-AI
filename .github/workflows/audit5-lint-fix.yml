@@ -41,10 +41,10 @@ jobs:
 
           p = Path('src/routing/social.py')
           s = p.read_text(encoding='utf-8')
-          old = 'from src.core.types import RoleID\n\nSOCIAL_RESPONSES'
+          old = 'from src.core.types import RoleID\n\n\nSOCIAL_RESPONSES'
           if old not in s:
               raise RuntimeError('social import target missing')
-          p.write_text(s.replace(old, 'from src.core.types import RoleID\nSOCIAL_RESPONSES', 1), encoding='utf-8')
+          p.write_text(s.replace(old, 'from src.core.types import RoleID\n\nSOCIAL_RESPONSES', 1), encoding='utf-8')
 
           p = Path('src/routing/task_analysis.py')
           s = p.read_text(encoding='utf-8')
@@ -67,20 +67,24 @@ jobs:
           if old not in s:
               raise RuntimeError('test core.types import target missing')
           s = s.replace(old, new, 1)
-          s = s.replace(
-              'from src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\nfrom src.memory.service import memory_service\n',
-              'from src.memory.service import memory_service\nfrom src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\n',
-              1,
-          )
+          old_order = 'from src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\nfrom src.memory.service import memory_service\n'
+          if old_order in s:
+              s = s.replace(
+                  old_order,
+                  'from src.memory.service import memory_service\nfrom src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\n',
+                  1,
+              )
           inner = '    from src.storage.sqlite import DatabaseManager, db\n\n'
           if inner not in s:
               raise RuntimeError('test duplicate sqlite import target missing')
           s = s.replace(inner, '', 1)
-          s = s.replace(
-              '    from src.files.pipeline import attachment_pipeline\n    from src.files import pipeline as pipeline_module\n',
-              '    from src.files import pipeline as pipeline_module\n    from src.files.pipeline import attachment_pipeline\n',
-              1,
-          )
+          old_inner = '    from src.files.pipeline import attachment_pipeline\n    from src.files import pipeline as pipeline_module\n'
+          if old_inner in s:
+              s = s.replace(
+                  old_inner,
+                  '    from src.files import pipeline as pipeline_module\n    from src.files.pipeline import attachment_pipeline\n',
+                  1,
+              )
           p.write_text(s, encoding='utf-8')
 
           Path('audit5_lint.ready').unlink(missing_ok=True)
