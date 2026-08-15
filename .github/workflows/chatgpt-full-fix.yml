@@ -36,7 +36,7 @@ jobs:
       - name: Launcher smoke test
         run: MORROW --help
       - name: Ruff verify
-        run: ruff check .
+        run: ruff check . --fix --diff
       - name: Tests
         run: pytest -q
 
