@@ -5,7 +5,7 @@ on:
     branches:
       - chatgpt/audit5-hardening-20260815
     paths:
-      - audit5_bundle.b64
+      - audit5_bundle.ready
 
 permissions:
   contents: write
@@ -27,7 +27,11 @@ jobs:
           import json
           import tarfile
 
-          archive = base64.b64decode(Path('audit5_bundle.b64').read_bytes())
+          parts = sorted(Path('.').glob('audit5_bundle.part*'))
+          if not parts:
+              raise RuntimeError('audit5 bundle chunks missing')
+          encoded = b''.join(p.read_bytes() for p in parts)
+          archive = base64.b64decode(encoded)
           with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
               try:
                   tf.extractall('.', filter='data')
@@ -41,11 +45,12 @@ jobs:
               if p.exists():
                   p.unlink()
 
-          for temp in (
+          for temp in [
               manifest_path,
-              Path('audit5_bundle.b64'),
+              Path('audit5_bundle.ready'),
               Path('.github/workflows/audit5-bootstrap.yml'),
-          ):
+              *parts,
+          ]:
               if temp.exists():
                   temp.unlink()
           PY
