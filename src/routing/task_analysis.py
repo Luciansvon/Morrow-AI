@@ -6,11 +6,11 @@ from src.core.types import RiskLevel, RoleID, TaskAnalysis, WorkloadType
 
 
 class TaskAnalyzer:
-    CRITICAL_TERMS = re.compile(r"\b(hukum|legal|kontrak|finansial|keuangan|investasi|transaksi|security|keamanan|privasi|irreversible|tidak bisa dibatalkan|krisis|compliance|regulasi)\b", re.I)
-    COMPLEX_TERMS = re.compile(r"\b(multi[- ]?step|kompleks|menyeluruh|end[- ]to[- ]end|seluruh proyek|semua departemen|dependensi|roadmap|arsitektur)\b", re.I)
-    PLANNING_TERMS = re.compile(r"\b(rencana|plan|planning|strategi|strategy|launch|peluncuran|roadmap|prioritas|sprint|jadwal)\b", re.I)
-    MARKETING_TERMS = re.compile(r"\b(marketing|pemasaran|campaign|kampanye|promo|promosi|iklan|ads|branding|brand|copywriting|konten|content|social media|launch|peluncuran)\b", re.I)
-    ADVISOR_TERMS = re.compile(r"\b(risiko|risk|trade[- ]?off|keputusan|decision|hukum|legal|finansial|keuangan|investasi|kontrak|security|keamanan|compliance|regulasi)\b", re.I)
+    CRITICAL_TERMS = re.compile(r"\b(hukum|legal|kontrak|finansial|keuangan|investasi|transaksi|security|keamanan|privasi|irreversible|tidak bisa dibatalkan|krisis|compliance|regulasi)\b", re.IGNORECASE)
+    COMPLEX_TERMS = re.compile(r"\b(multi[- ]?step|kompleks|menyeluruh|end[- ]to[- ]end|seluruh proyek|semua departemen|dependensi|roadmap|arsitektur)\b", re.IGNORECASE)
+    PLANNING_TERMS = re.compile(r"\b(rencana|plan|planning|strategi|strategy|launch|peluncuran|roadmap|prioritas|sprint|jadwal)\b", re.IGNORECASE)
+    MARKETING_TERMS = re.compile(r"\b(marketing|pemasaran|campaign|kampanye|promo|promosi|iklan|ads|branding|brand|copywriting|konten|content|social media|launch|peluncuran)\b", re.IGNORECASE)
+    ADVISOR_TERMS = re.compile(r"\b(risiko|risk|trade[- ]?off|keputusan|decision|hukum|legal|finansial|keuangan|investasi|kontrak|security|keamanan|compliance|regulasi)\b", re.IGNORECASE)
 
     @classmethod
     def analyze(cls, text: str, primary_role: RoleID, attachment_count: int = 0) -> TaskAnalysis:

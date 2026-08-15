@@ -1,14 +1,17 @@
 # 🤖 Morrow AI — Personal Autonomous Multi-Agent Executive Team
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Architecture](https://img.shields.io/badge/Architecture-1%20Backend%20%7C%203%20Telegram%20Bots-success.svg)](docs/ARCHITECTURE.md)
-[![Tests](https://img.shields.io/badge/Tests-48%20Passed%20(100%25)-brightgreen.svg)](tests/)
-[![PRD Compliance](https://img.shields.io/badge/PRD%20v0.2-22%20Contracts%20Verified-blueviolet.svg)](Morrow_PRD_v0.2_Skill_Based.md)
+[![CI](https://img.shields.io/badge/CI-Python%203.11%20%2B%203.12-brightgreen.svg)](.github/workflows/chatgpt-full-fix.yml)
+[![PRD](https://img.shields.io/badge/PRD-v0.2%20traceable-blueviolet.svg)](Morrow_PRD_v0.2_Skill_Based.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Morrow AI** adalah platform tim eksekutif multi-agen otonom pribadi yang beroperasi secara harmonis di dalam grup Telegram pengguna. Dibangun di atas **satu backend runtime terpadu**, Morrow menghadirkan **tiga agen spesialis independen** (Manager, Marketing, dan Advisor) dengan identitas bot masing-masing, sistem memori terisolasi, orkestrasi tugas idempoten, dan penanganan dokumen lokal pra-routing.
 
 ---
+
+
+> **Acceptance-test honesty:** suite otomatis tidak mengklaim 22/22 kontrak PRD sampai setiap AC benar-benar diuji sesuai definisinya. Keputusan produk yang masih terbuka dicatat di `docs/BUG_BACKLOG.md`.
 
 ## 🌟 Fitur Utama (Key Capabilities)
 
@@ -139,7 +142,7 @@ python -m src.main
 Saat startup berhasil, console akan menampilkan:
 ```text
 ============================================================
-  🚀 Memulai Asisten Tim AI Morrow v0.2
+  🚀 Memulai Asisten Tim AI Morrow v0.2.2
 ============================================================
 ✅ Database initialized
 ✅ Manager bot connected (@your_manager_bot)
@@ -193,7 +196,7 @@ Morrow-AI/
 │   ├── skills/                # Parser SKILL.md & skill registry
 │   ├── storage/               # Schema SQL (14 tables), SQLite WAL driver, attachments
 │   └── tools/                 # Tool registry, execution policy & idempotency
-└── tests/                     # 48 Suite Pengujian Otomatis (100% Pass)
+└── tests/                     # Unit, integration, concurrency & hardening tests
 ```
 
 ---

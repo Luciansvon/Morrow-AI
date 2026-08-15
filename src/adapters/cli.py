@@ -59,7 +59,7 @@ class CLIAdapter(BaseChannelAdapter):
         print(f"\n⚠️ [PERSETUJUAN DIBUTUHKAN - ID: {approval_id}]")
         print(f"Aksi: {action_description}")
         print(f"Parameter: {parameters}")
-        print("Ketik: /approve {approval_id} atau /reject {approval_id}")
+        print(f"Ketik: /approve {approval_id} atau /reject {approval_id}")
 
     async def inject_message(self, message: NormalizedMessage) -> None:
         """Memasukkan pesan secara programmatik untuk pengujian."""

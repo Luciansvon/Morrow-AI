@@ -1,6 +1,6 @@
 [project]
 name = "morrow"
-version = "0.2.0"
+version = "0.2.2"
 description = "Private Multi-Agent Group Assistant (Morrow v0.2)"
 authors = [{ name = "Bima" }]
 requires-python = ">=3.11"
@@ -28,7 +28,7 @@ python_files = ["test_*.py"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 ignore = ["E501", "BLE001", "S110", "ASYNC230", "RUF059", "SIM102", "S101"]

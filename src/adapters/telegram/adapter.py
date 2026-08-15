@@ -22,7 +22,13 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
         self._polling_tasks: list[asyncio.Task] = []
         self._running = False
 
-    async def _download_attachments(self, message: Any, bot: Any) -> list[AttachmentInfo]:
+    async def _download_attachments(
+        self,
+        message: Any,
+        bot: Any,
+        group_id: str,
+        platform_message_id: str,
+    ) -> list[AttachmentInfo]:
         items: list[tuple[Any, str, int | None]] = []
         document = getattr(message, "document", None)
         photos = getattr(message, "photo", None) or []
@@ -53,7 +59,16 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                     content = downloaded.getvalue()
                 else:
                     content = buffer.getvalue()
-                result.append(await attachment_pipeline.process_bytes(filename, content))
+                result.append(
+                    await attachment_pipeline.process_bytes(
+                        filename,
+                        content,
+                        usage_context={
+                            "group_id": group_id,
+                            "thread_id": f"thr_{group_id}_{platform_message_id}",
+                        },
+                    )
+                )
             except Exception as exc:
                 result.append(AttachmentInfo(
                     file_id=str(getattr(telegram_file, "file_unique_id", "download_error")),
@@ -97,7 +112,12 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                     if not won:
                         return
                     norm.event_claimed = True
-                    norm.attachments = await self._download_attachments(message, current_bot)
+                    norm.attachments = await self._download_attachments(
+                        message,
+                        current_bot,
+                        norm.group_id,
+                        norm.message_id,
+                    )
                     await self.message_handler(norm)
                 return message_handler
 
@@ -107,6 +127,19 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
             self._polling_tasks.append(asyncio.create_task(dp.start_polling(bot)))
         self._running = True
         print("🚀 Morrow ready - Menunggu pesan di grup Telegram...")
+
+    def raise_if_unhealthy(self) -> None:
+        if not self._running:
+            return
+        for task in self._polling_tasks:
+            if not task.done():
+                continue
+            if task.cancelled():
+                raise RuntimeError("Telegram polling task berhenti secara tak terduga.")
+            exc = task.exception()
+            if exc is not None:
+                raise RuntimeError("Telegram polling task gagal.") from exc
+            raise RuntimeError("Telegram polling task berhenti tanpa error saat adapter masih aktif.")
 
     async def stop(self) -> None:
         self._running = False
@@ -118,6 +151,8 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
             session = getattr(bot, "session", None)
             if session and hasattr(session, "close"):
                 await session.close()
+        self._polling_tasks.clear()
+        self._dispatchers.clear()
 
     async def send_message(self, group_id: str, text: str, from_role: RoleID | None = None, reply_to_message_id: str | None = None) -> str:
         return await telegram_sender.send_message(group_id, text, from_role, reply_to_message_id)

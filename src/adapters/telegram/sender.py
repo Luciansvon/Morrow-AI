@@ -1,6 +1,5 @@
-"""Telegram sender by RoleID, plain-text safe, with 4096-char aware chunking."""
+"""Telegram sender. Never fabricates delivery success when a bot is unavailable."""
 
-import uuid
 from typing import Any
 
 from src.adapters.telegram.bot_registry import bot_registry
@@ -33,9 +32,10 @@ class TelegramSender:
         if reply_num is not None:
             try:
                 from aiogram.types import ReplyParameters
+
                 kwargs["reply_parameters"] = ReplyParameters(message_id=reply_num)
                 return await bot.send_message(**kwargs)
-            except TypeError:  # mock/older compatibility
+            except TypeError:
                 kwargs.pop("reply_parameters", None)
                 kwargs["reply_to_message_id"] = reply_num
         return await bot.send_message(**kwargs)
@@ -50,13 +50,16 @@ class TelegramSender:
         role = from_role or RoleID.MANAGER
         bot = bot_registry.get_bot(role)
         if not bot or not hasattr(bot, "send_message"):
-            return f"tg_msg_{role.value}_{uuid.uuid4().hex[:8]}"
+            raise RuntimeError(f"Telegram bot untuk role '{role.value}' belum siap.")
+
         last_id = ""
         reply_to = reply_to_message_id
         for chunk in TelegramSender._chunks(text):
             sent = await TelegramSender._send_one(bot, group_id, chunk, reply_to)
             last_id = str(sent.message_id)
             reply_to = last_id
+        if not last_id:
+            raise RuntimeError("Telegram tidak mengembalikan message_id setelah pengiriman.")
         return last_id
 
     @staticmethod

@@ -26,12 +26,10 @@ class MessageNormalizer:
     async def claim_event(event_id: str, platform: str = "telegram", group_id: str | None = None) -> bool:
         """Atomic claim. True berarti caller memenangkan event dan boleh memprosesnya."""
         canonical = MessageNormalizer.canonical_event_id(event_id, platform, group_id)
-        conn = await db.connect()
-        cursor = await conn.execute(
+        cursor = await db.execute(
             "INSERT OR IGNORE INTO processed_events (event_id, platform, group_id) VALUES (?, ?, ?)",
             (canonical, platform, group_id),
         )
-        await conn.commit()
         return cursor.rowcount == 1
 
     @staticmethod

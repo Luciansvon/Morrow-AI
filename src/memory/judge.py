@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from src.core.config import settings
 from src.core.types import MemoryScope, MemoryType, RoleID
 from src.llm.model_catalog import MODEL_CATALOG
 from src.llm.openrouter import openrouter_client
@@ -26,13 +27,16 @@ class MemoryJudge:
         group_id: str = "__global__",
         user_text: str | None = None,
         assistant_text: str | None = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any] | None:
         if user_text is None and assistant_text is None:
             user_text = text or ""
             assistant_text = ""
         if not (user_text or "").strip():
             return None
-        payload = f"PESAN PENGGUNA:\n{user_text}\n\nJAWABAN AGENT:\n{assistant_text or ''}"
+        bounded_user = (user_text or "")[: settings.max_message_context_chars]
+        bounded_assistant = (assistant_text or "")[: settings.max_agent_output_tokens * 6]
+        payload = f"PESAN PENGGUNA:\n{bounded_user}\n\nJAWABAN AGENT:\n{bounded_assistant}"
         try:
             res = await openrouter_client.chat_completion(
                 messages=[
@@ -42,7 +46,12 @@ class MemoryJudge:
                 model=MODEL_CATALOG["mimo_v2_5"].model_id,
                 temperature=0.0,
                 response_format={"type": "json_object"},
-                usage_context={"group_id": group_id, "role_id": role_id.value if role_id else None},
+                max_tokens=settings.max_memory_judge_output_tokens,
+                usage_context={
+                    "group_id": group_id,
+                    "thread_id": thread_id,
+                    "role_id": role_id.value if role_id else "memory_judge",
+                },
             )
             data = json.loads(res.content)
             if not data.get("should_store"):

@@ -1,5 +1,5 @@
 # 🏛️ Catatan Keputusan Arsitektur & Desain (ADR) — Morrow v0.2
-*Status: `[TERVERIFIKASI]` — Berdasarkan Keputusan Resmi [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md)*
+*Status: `[AKTIF - DIAUDIT v0.2.2]` — Keputusan diterapkan terhadap [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md); keputusan produk yang masih terbuka tetap dicatat sebagai OQ dan tidak dianggap selesai oleh test suite.*
 
 Dokumen ini mencatat seluruh keputusan arsitektur utama (*Architectural Decision Records*) yang telah disepakati untuk proyek **Morrow**.
 
@@ -135,11 +135,7 @@ Sistem membutuhkan kombinasi pustaka (*libraries*) dan alat pemrograman yang ter
 #### 2. Pilihan Teknologi Terpilih
 1. **Core & Asinkron:** `Python 3.11+ / 3.12+` dengan standar `asyncio` dan `Pydantic v2` untuk validasi data terstruktur.
 2. **Database & Penyimpanan:** `aiosqlite` dengan mode `SQLite WAL (Write-Ahead Logging)` untuk penyimpanan tugas, memori peran, memori bersama, dan jejak audit.
-3. **Penyedia LLM (OpenRouter & Model Bertingkat):** Menggunakan OpenRouter API sebagai satu pintu terpadu dengan strategi model bertingkat (*Tiered Model Routing*):
-   - **`deepseek/deepseek-chat` (DeepSeek V3/V4):** Otak utama agen Manager, Marketing, dan penyalur pesan (*Router*). Sangat hemat ($0.14 input / $0.28 output per 1M token) dan mendukung *prompt caching* hingga diskon 80%.
-   - **`google/gemini-2.0-flash`:** Untuk analisis lampiran gambar/poster (*Vision*) dan routing cepat ($0.10 input / $0.40 output).
-   - **`deepseek/deepseek-r1`:** Untuk Advisor Agent khusus penalaran mendalam (*Deep Reasoning*) saat menganalisis risiko berat.
-   - **`meta-llama/llama-3.3-70b-instruct:free`:** Jalur gratis untuk pengujian/development.
+3. **Penyedia LLM:** OpenRouter digunakan sebagai provider gateway modular. Pemilihan model spesifik pada ADR-008 **disupersesi oleh ADR-009** dan source of truth runtime berada di `src/llm/model_catalog.py` + `src/llm/model_policy.py`. Harga provider tidak dibekukan dalam ADR karena dapat berubah.
 
 4. **Pembaca Berkas Asli (*Native Parsers*):** `PyMuPDF` (`fitz`) untuk PDF berbasis teks, `openpyxl` untuk XLSX, `python-docx` untuk DOCX, `python-pptx` untuk PPTX.
 5. **OCR & Analisis Visual:** `Pillow` dan `pytesseract` / Vision API untuk dokumen pindaian dan poster promosi.
@@ -149,11 +145,13 @@ Sistem membutuhkan kombinasi pustaka (*libraries*) dan alat pemrograman yang ter
 9. **Kerangka Pengujian:** `pytest`, `pytest-asyncio`, dan `pytest-cov`.
 
 #### 3. Dampak
-Arsitektur kode tetap ramping, mudah diuji secara modular, tidak memiliki ketergantungan berlebih pada pihak ketiga, dan sepenuhnya memenuhi 22 Kontrak Penerimaan (*Acceptance Contracts*).
+Arsitektur kode tetap ramping dan dapat diuji secara modular. Kesesuaian PRD dinilai per Acceptance Contract; tidak ada klaim 22/22 sampai setiap AC memiliki bukti uji yang benar-benar sesuai definisinya.
 
 ---
 
 ### [ADR-009] Arsitektur Model Hibrida Super-Efisien (Hasil Audit Komparasi 2026)
+
+> Harga/discount provider bersifat dinamis. Nama model di dokumen ini menjelaskan intent arsitektur; slug dan routing runtime yang berlaku tetap mengikuti `src/llm/model_catalog.py` dan `src/llm/model_policy.py`.
 
 * **Tanggal:** 2026-08-15
 * **Status Keputusan:** Accepted
@@ -164,20 +162,20 @@ Setelah dilakukan audit komparatif mendalam berbasis data benchmark riil, keanda
 
 #### 2. Keputusan Arsitektur Model
 1. **Model Harian (2 Daily Drivers):**
-   - `Manager`: **`DeepSeek V4 Flash 0731`** ($0.14/$0.28 per 1M) dengan *reasoning* bertingkat (*off/low/high/xhigh*).
-   - `Marketing`: **`MiMo-V2.5`** ($0.14/$0.28 per 1M), native multimodal (teks, gambar, video, audio) dengan error *tool-call* hanya 0.49%.
+   - `Manager`: **`DeepSeek V4 Flash 0731`** dengan *reasoning* bertingkat (*off/low/high/xhigh*).
+   - `Marketing`: **`MiMo-V2.5`** sebagai model Marketing harian dan klasifikasi murah sesuai policy runtime.
    - `Advisor (Normal)`: **`DeepSeek V4 Flash 0731`** (*reasoning: high/xhigh*).
    - `Router` & `Memory Judge`: **`MiMo-V2.5 non-thinking`** untuk klasifikasi JSON instan.
 2. **Model Spesialis & Eskalasi (2 Escalation Models):**
-   - `Marketing (Pro Mode)`: **`MiniMax M3`** ($0.30/$1.20 per 1M) untuk kampanye penting, evaluasi spreadsheet kompleks, dan analisis kreatif multi-file.
-   - `Advisor (Critical)`: **`DeepSeek V4-Pro-0813`** ($1.32/$3.96 per 1M) khusus untuk keputusan berdampak tinggi, multi-tradeoff, ketidakpastian tinggi, dan sulit dibatalkan (*irreversible*).
+   - `Marketing (Pro Mode)`: **`MiniMax M3`** untuk kampanye penting, evaluasi spreadsheet kompleks, dan analisis kreatif multi-file.
+   - `Advisor (Critical)`: **`DeepSeek V4-Pro-0813`** khusus untuk keputusan berdampak tinggi, multi-tradeoff, ketidakpastian tinggi, dan sulit dibatalkan (*irreversible*).
 3. **Model Darurat & Validasi Independen (2 Emergency Models):**
    - `Provider Fallback`: **`GPT-5.6 Luna`** saat DeepSeek mengalami gangguan / rate limit.
    - `Critical Cross-Check`: **`Claude Sonnet 5`** untuk peninjauan kedua independen pada keputusan hukum/bisnis raksasa.
 4. **Jalur Berkas:** Dokumen teks/tabel dibaca *native parser* lokal, pindaian/gambar dianalisis oleh `MiMo-V2.5`, dan kasus visual sulit dievaluasi oleh `MiniMax M3`.
 
 #### 3. Dampak
-Sistem hanya mengaktifkan 2 model harian super hemat untuk 95% beban kerja, memangkas biaya pemborosan token reasoning, dan menjaga stabilitas integrasi fungsi.
+Sistem memprioritaskan model harian yang hemat dan hanya menaikkan tier berdasarkan workload/risk. Harga provider dan proporsi penggunaan bukan bagian dari kontrak ADR; biaya aktual harus dibaca dari usage ledger.
 
 ---
 

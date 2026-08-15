@@ -4,6 +4,17 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 
 ---
 
+### [WL-011] Audit 5-Pass Reliability & Evidence Hardening v0.2.2
+* **Tanggal:** 2026-08-15
+* **Tipe Pekerjaan:** Full-Code Audit, Concurrency/Security Hardening, Test Integrity
+* **Status:** Completed setelah CI rilis terkait lulus.
+* **Scope Audit:** seluruh `src/`, konfigurasi/runtime, adapter Telegram, LLM/provider, routing/orchestrator, persistence, file intake/parser/vision, approval/tool idempotency, task/memory/loop guard, tests, dan dokumentasi operasional.
+* **Perbaikan Utama:** fail-closed tool policy, approval & execution claim atomik, idempotency terikat tool+parameter, transaksi SQLite konsisten pada single async connection, race memory/handoff/loop ditutup, Telegram tidak lagi membuat synthetic delivery ID, reply routing langsung dari identitas bot, social greeting zero-token, collective task tidak ditandai `done` saat berhenti prematur, parser sinkron di-offload dari event loop, resource bounds untuk Office/PDF/image/spreadsheet, bounded LLM context/output + budget attribution, usage attribution vision, OpenRouter timeout/retry tunggal, dan CI lint verification tanpa auto-fix source.
+* **Koreksi Evidence:** klaim historis “22/22 Acceptance Contracts terverifikasi otomatis” **ditarik sebagai status saat ini**. Berkas `tests/test_all_contracts.py` dihapus karena beberapa nomor AC tidak menguji kontrak PRD yang sesuai. Kontrak yang belum punya automated evidence tetap harus dianggap belum terbukti.
+* **Open Product Questions:** OQ-002/004, OQ-003, dan OQ-005 tetap terbuka; audit tidak mengarang keputusan produk untuk menutupnya.
+
+---
+
 ### [WL-010] Implementasi Collective & Multi-Agent Addressing System dan Pembuatan README.md
 * **Tanggal:** 2026-08-15
 * **Tipe Pekerjaan:** Implementasi Fitur Routing Cerdas, Pembuatan Dokumentasi Utama & Git Sync
@@ -19,7 +30,7 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Membangun suite pengujian komprehensif di `tests/test_addressing.py` (16 skenario uji).
   - Memvalidasi seluruh **48 skenario pengujian unit & integrasi** dengan `pytest` (100% passed).
   - Menyusun berkas `README.md` lengkap dan terstruktur untuk repositori GitHub.
-  - Mencatat keputusan arsitektur resmi **[ADR-012]** di [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+  - Mencatat keputusan arsitektur resmi **[ADR-012]** di [`docs/DECISIONS.md`](../docs/DECISIONS.md).
 * **Keputusan Penting:**
   - Kata *"semua"* tidak otomatis menjadi broadcast jika konteksnya adalah penunjuk jumlah objek.
 * **Next Action:**
@@ -42,7 +53,7 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Menulis suite pengujian komprehensif di `tests/test_telegram_multi_bot.py`.
   - Memvalidasi seluruh 32 skenario pengujian dengan `pytest` (100% passed).
   - Menginisialisasi git repository lokal dan mengatur remote ke `https://github.com/Luciansvon/Morrow-AI.git`.
-  - Mencatat keputusan arsitektur resmi **[ADR-011]** di [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+  - Mencatat keputusan arsitektur resmi **[ADR-011]** di [`docs/DECISIONS.md`](../docs/DECISIONS.md).
 * **Keputusan Penting:**
   - Tetap 1 backend, 1 database SQLite, 1 orchestrator, dan 1 sistem memori bersama.
 * **Next Action:**
@@ -89,7 +100,7 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Menambahkan kontrak eksekusi idempoten dan larangan auto-retry pada status tindakan eksternal yang tidak pasti (*UNKNOWN*).
   - Memperbarui matriks keterlacakan 22 Kontrak Penerimaan (AC-001 s.d. AC-022) secara terperinci.
   - Memperbarui artefak rencana kerja `implementation_plan.md`.
-  - Menambahkan ADR-010 pada [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md) dan memperbarui [`docs/ARCHITECTURE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ARCHITECTURE.md).
+  - Menambahkan ADR-010 pada [`docs/DECISIONS.md`](../docs/DECISIONS.md) dan memperbarui [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 * **Keputusan Penting:**
   - Tidak mengasumsikan keputusan terbuka PRD tanpa kontrak eksplisit.
 * **Next Action:**
@@ -108,9 +119,9 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Mengalihkan Router dan Memory Judge ke `MiMo-V2.5 non-thinking` untuk memangkas pemborosan token reasoning.
   - Menetapkan `GPT-5.6 Luna` sebagai provider outage fallback dan `Claude Sonnet 5` sebagai peninjau kedua independen.
   - Memperbarui dokumen artefak `implementation_plan.md`.
-  - Menambahkan ADR-009 pada [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
-  - Memperbarui seksi 6 pada [`docs/ARCHITECTURE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ARCHITECTURE.md).
-  - Memperbarui preferensi pada [`user.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/user.md).
+  - Menambahkan ADR-009 pada [`docs/DECISIONS.md`](../docs/DECISIONS.md).
+  - Memperbarui seksi 6 pada [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+  - Memperbarui preferensi pada [`user.md`](../user.md).
 * **Keputusan Penting:**
   - Menjaga sistem tetap dinamis dan adaptif terhadap perubahan harga DeepSeek V4 per 17 Agustus 2026.
 * **Next Action:**
@@ -127,7 +138,7 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Mengkaji sentimen dan temuan nyata Reddit tentang `Gemini 2.0 Flash` (*The baseline that works* untuk kestabilan fungsi & tool tanpa format pecah), `DeepSeek V3` / `Qwen 2.5 72B` (kecerdasan bahasa & strategi, namun butuh *Pydantic safety wrapper* untuk mencegah *Agentic Gap*), dan `DeepSeek R1` (khusus *deep reasoning* penasihat risiko).
   - Merancang arsitektur hibrida (*Hybrid Architecture*) berbasis temuan Reddit.
   - Memperbarui berkas rencana kerja `implementation_plan.md`.
-  - Memperbarui profil preferensi pengguna pada [`user.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/user.md).
+  - Memperbarui profil preferensi pengguna pada [`user.md`](../user.md).
 * **Keputusan Penting:**
   - Menggabungkan kecepatan Gemini 2.0 Flash sebagai penyalur pesan (router) dan pembaca gambar dengan keluwesan bahasa DeepSeek V3 / Qwen untuk Manager & Marketing.
 * **Next Action:**
@@ -144,7 +155,7 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
   - Menganalisis model OpenRouter: `deepseek/deepseek-chat` ($0.14 input / $0.28 output), `google/gemini-2.0-flash` ($0.10 input / $0.40 output), `deepseek/deepseek-r1` ($0.70 input / $2.50 output), dan tier gratis `meta-llama/llama-3.3-70b-instruct:free`.
   - Merancang arsitektur model bertingkat (*Tiered Model Architecture*) untuk membagi tugas sesuai keahlian model sehingga biaya operasional sangat hemat.
   - Memperbarui berkas rencana kerja `implementation_plan.md`.
-  - Memperbarui catatan arsitektur ADR-008 pada [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+  - Memperbarui catatan arsitektur ADR-008 pada [`docs/DECISIONS.md`](../docs/DECISIONS.md).
 * **Keputusan Penting:**
   - Menggunakan 1 API Key OpenRouter untuk mengakses seluruh model tanpa merombak arsitektur backend.
 * **Next Action:**
@@ -158,17 +169,17 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 * **Status:** Completed
 * **Tujuan:** Menyusun rencana implementasi komprehensif untuk pembangunan Morrow v0.2 sesuai PRD, meriset tumpukan teknologi modern yang teruji di komunitas, dan menerapkan kaidah ML Best Practices.
 * **Scope Pekerjaan:**
-  - Melakukan audit menyeluruh terhadap [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md) dan 22 Kontrak Penerimaan (AC-001 s.d. AC-022).
+  - Melakukan audit menyeluruh terhadap [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md) dan 22 Kontrak Penerimaan (AC-001 s.d. AC-022).
   - Meriset dan menetapkan pustaka Python modern: `asyncio`, `Pydantic v2`, `aiosqlite (SQLite WAL)`, `DeepSeek (via modular interface)`, `PyMuPDF`, `openpyxl`, `python-docx`, `python-pptx`, `puremagic`, `Pillow`, `tenacity`, `aiogram v3`, dan `pytest`.
   - Menerapkan prinsip ML Best Practices (isolasi konteks tanpa kebocoran data, skema output JSON ketat, dataset tolok ukur evaluasi routing, dan pelaporan kegagalan jujur).
   - Menyusun dokumen artefak rencana kerja `implementation_plan.md` yang terbagi ke dalam 6 fase pengerjaan bertahap.
-  - Memperbarui profil dan catatan observasi pengguna di [`user.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/user.md).
-  - Menambahkan ADR-008 pada [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+  - Memperbarui profil dan catatan observasi pengguna di [`user.md`](../user.md).
+  - Menambahkan ADR-008 pada [`docs/DECISIONS.md`](../docs/DECISIONS.md).
 * **File yang Berubah:**
   - `[NEW ARTIFACT]` `implementation_plan.md`
-  - `[MODIFIED]` [`user.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/user.md)
-  - `[MODIFIED]` [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md)
-  - `[MODIFIED]` [`docs/WORKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/WORKLOG.md)
+  - `[MODIFIED]` [`user.md`](../user.md)
+  - `[MODIFIED]` [`docs/DECISIONS.md`](../docs/DECISIONS.md)
+  - `[MODIFIED]` [`docs/WORKLOG.md`](../docs/WORKLOG.md)
 * **Keputusan Penting:**
   - Tidak melakukan persetujuan otomatis (*no auto-approve*) sebelum mendapat konfirmasi eksplisit dari Mas Bima.
 * **Next Action:**
@@ -180,20 +191,20 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 * **Tanggal:** 2026-08-15
 * **Tipe Pekerjaan:** Dokumentasi & Arsitektur
 * **Status:** Completed
-* **Tujuan:** Mengisi seluruh berkas dokumentasi di folder `docs/` dengan mengekstrak data resmi dari [`Morrow_PRD_v0.2_Skill_Based.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/Morrow_PRD_v0.2_Skill_Based.md).
+* **Tujuan:** Mengisi seluruh berkas dokumentasi di folder `docs/` dengan mengekstrak data resmi dari [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md).
 * **Scope Pekerjaan:**
-  - Mengisi [`docs/ARCHITECTURE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ARCHITECTURE.md) dengan pembagian peran agen, peta kemampuan, dan batasan teknis (SQLite, DeepSeek, concurrency).
-  - Mengisi [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md) dengan 7 keputusan arsitektur (ADR-001 s.d. ADR-007).
-  - Mengisi [`docs/BUG_BACKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/BUG_BACKLOG.md) dengan 6 catatan risiko keputusan terbuka (RSK-001 s.d. RSK-006 / OQ-001 s.d. OQ-006).
-  - Mengisi [`docs/TESTING_GUIDE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/TESTING_GUIDE.md) dengan prosedur pengujian berbasis kontrak penerimaan (AC-001 s.d. AC-022).
-  - Mengisi [`docs/RELEASE_NOTES.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/RELEASE_NOTES.md) dengan ringkasan status rilis v0.2.0.
+  - Mengisi [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) dengan pembagian peran agen, peta kemampuan, dan batasan teknis (SQLite, DeepSeek, concurrency).
+  - Mengisi [`docs/DECISIONS.md`](../docs/DECISIONS.md) dengan 7 keputusan arsitektur (ADR-001 s.d. ADR-007).
+  - Mengisi [`docs/BUG_BACKLOG.md`](../docs/BUG_BACKLOG.md) dengan 6 catatan risiko keputusan terbuka (RSK-001 s.d. RSK-006 / OQ-001 s.d. OQ-006).
+  - Mengisi [`docs/TESTING_GUIDE.md`](../docs/TESTING_GUIDE.md) dengan prosedur pengujian berbasis kontrak penerimaan (AC-001 s.d. AC-022).
+  - Mengisi [`docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md) dengan ringkasan status rilis v0.2.0.
 * **File yang Berubah:**
-  - `[MODIFIED]` [`docs/ARCHITECTURE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ARCHITECTURE.md)
-  - `[MODIFIED]` [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md)
-  - `[MODIFIED]` [`docs/BUG_BACKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/BUG_BACKLOG.md)
-  - `[MODIFIED]` [`docs/TESTING_GUIDE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/TESTING_GUIDE.md)
-  - `[MODIFIED]` [`docs/RELEASE_NOTES.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/RELEASE_NOTES.md)
-  - `[MODIFIED]` [`docs/WORKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/WORKLOG.md)
+  - `[MODIFIED]` [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+  - `[MODIFIED]` [`docs/DECISIONS.md`](../docs/DECISIONS.md)
+  - `[MODIFIED]` [`docs/BUG_BACKLOG.md`](../docs/BUG_BACKLOG.md)
+  - `[MODIFIED]` [`docs/TESTING_GUIDE.md`](../docs/TESTING_GUIDE.md)
+  - `[MODIFIED]` [`docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md)
+  - `[MODIFIED]` [`docs/WORKLOG.md`](../docs/WORKLOG.md)
 * **Keputusan Penting:**
   - Seluruh informasi disarikan murni dari dokumen PRD tanpa mengarang data fiktif.
 * **Next Action:**
@@ -207,11 +218,11 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 * **Status:** Completed
 * **Tujuan:** Menyiapkan struktur folder `docs/` dan subfolder `docs/archive/`.
 * **File yang Dibuat:**
-  - `[NEW]` [`docs/ARCHITECTURE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ARCHITECTURE.md)
-  - `[NEW]` [`docs/BUG_BACKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/BUG_BACKLOG.md)
-  - `[NEW]` [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md)
-  - `[NEW]` [`docs/ERROR_SOLUTIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/ERROR_SOLUTIONS.md)
-  - `[NEW]` [`docs/RELEASE_NOTES.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/RELEASE_NOTES.md)
-  - `[NEW]` [`docs/TESTING_GUIDE.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/TESTING_GUIDE.md)
-  - `[NEW]` [`docs/WORKLOG.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/WORKLOG.md)
-  - `[NEW]` [`docs/archive/README.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/archive/README.md)
+  - `[NEW]` [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+  - `[NEW]` [`docs/BUG_BACKLOG.md`](../docs/BUG_BACKLOG.md)
+  - `[NEW]` [`docs/DECISIONS.md`](../docs/DECISIONS.md)
+  - `[NEW]` [`docs/ERROR_SOLUTIONS.md`](../docs/ERROR_SOLUTIONS.md)
+  - `[NEW]` [`docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md)
+  - `[NEW]` [`docs/TESTING_GUIDE.md`](../docs/TESTING_GUIDE.md)
+  - `[NEW]` [`docs/WORKLOG.md`](../docs/WORKLOG.md)
+  - `[NEW]` [`docs/archive/README.md`](../docs/archive/README.md)

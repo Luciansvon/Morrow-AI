@@ -1,7 +1,17 @@
-"""Kebijakan eksekusi alat (Internal Otomatis vs Eksternal Wajib Izin User)."""
+"""Fail-closed tool policy: only explicitly classified actions may execute."""
 
+INTERNAL_ACTIONS: set[str] = {
+    "create_task",
+    "delegate_task",
+    "update_task_status",
+    "read_attachment",
+    "analyze_campaign",
+    "create_content_brief",
+    "evaluate_risk",
+    "propose_decision",
+    "query_memory",
+}
 
-# Kumpulan aksi yang berdampak ke dunia luar dan WAJIB meminta izin user (CAP-APPROVAL)
 EXTERNAL_ACTIONS: set[str] = {
     "send_email",
     "send_external_message",
@@ -14,17 +24,21 @@ EXTERNAL_ACTIONS: set[str] = {
 
 
 class ToolPolicy:
-    """Pemeriksa batasan otoritas eksekusi alat."""
-
     @staticmethod
-    def requires_user_approval(action_type: str) -> bool:
-        """Mengembalikan True jika aksi membutuhkan persetujuan eksplisit manusia."""
-        return action_type in EXTERNAL_ACTIONS
+    def classify(action_type: str) -> str:
+        if action_type in INTERNAL_ACTIONS:
+            return "internal"
+        if action_type in EXTERNAL_ACTIONS:
+            return "external"
+        return "unknown"
 
-    @staticmethod
-    def is_internal_action(action_type: str) -> bool:
-        """Mengembalikan True jika aksi bersifat internal dan boleh jalan otomatis."""
-        return not ToolPolicy.requires_user_approval(action_type)
+    @classmethod
+    def requires_user_approval(cls, action_type: str) -> bool:
+        return cls.classify(action_type) == "external"
+
+    @classmethod
+    def is_internal_action(cls, action_type: str) -> bool:
+        return cls.classify(action_type) == "internal"
 
 
 tool_policy = ToolPolicy()

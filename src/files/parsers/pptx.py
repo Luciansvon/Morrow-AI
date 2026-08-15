@@ -1,28 +1,35 @@
-"""Parser dokumen Microsoft PowerPoint (.pptx)."""
+"""Bounded parser for Microsoft PowerPoint (.pptx)."""
 
+from src.core.config import settings
 
 
 class PPTXParser:
-    """Parser untuk mengekstrak teks slide dan catatan dari berkas .pptx."""
-
     @staticmethod
     def parse_pptx(file_path: str) -> tuple[str | None, bool]:
         try:
             from pptx import Presentation
-            prs = Presentation(file_path)
-            slide_texts = []
 
-            for idx, slide in enumerate(prs.slides, start=1):
-                slide_content = [f"--- Slide {idx} ---"]
+            presentation = Presentation(file_path)
+            parts: list[str] = []
+            total_chars = 0
+            limit = settings.max_document_extract_chars
+            for idx, slide in enumerate(presentation.slides, start=1):
+                if total_chars >= limit:
+                    break
+                slide_parts = [f"--- Slide {idx} ---"]
                 for shape in slide.shapes:
-                    if hasattr(shape, "text") and shape.text.strip():
-                        slide_content.append(shape.text.strip())
-                slide_texts.append("\n".join(slide_content))
+                    text = getattr(shape, "text", "")
+                    if text and text.strip():
+                        slide_parts.append(text.strip())
+                block = "\n".join(slide_parts)
+                remaining = max(0, limit - total_chars)
+                parts.append(block[:remaining])
+                total_chars += min(len(block), remaining)
 
-            full_text = "\n\n".join(slide_texts).strip()
+            full_text = "\n\n".join(parts).strip()
             return full_text if full_text else None, True
-        except Exception as e:
-            return f"Error parsing PPTX: {e!s}", False
+        except Exception as exc:
+            return f"Error parsing PPTX: {exc}", False
 
 
 pptx_parser = PPTXParser()

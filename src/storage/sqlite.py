@@ -1,9 +1,10 @@
 """SQLite async manager dengan WAL, migrasi ringan, transaksi, dan integrity check."""
 
 import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -16,6 +17,10 @@ class DatabaseManager:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or settings.db_path
         self._connection: aiosqlite.Connection | None = None
+        self._connect_lock = asyncio.Lock()
+        # One shared SQLite connection means transaction boundaries must also guard
+        # ordinary execute/fetch calls. Otherwise another coroutine can accidentally
+        # commit inside an unrelated BEGIN IMMEDIATE block.
         self._transaction_lock = asyncio.Lock()
 
     @classmethod
@@ -25,17 +30,21 @@ class DatabaseManager:
         return cls._instance
 
     async def connect(self) -> aiosqlite.Connection:
-        if self._connection is None:
-            if self.db_path != ":memory:":
-                Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-            conn = await aiosqlite.connect(self.db_path)
-            conn.row_factory = aiosqlite.Row
-            await conn.execute("PRAGMA foreign_keys = ON;")
-            if self.db_path != ":memory:":
-                await conn.execute("PRAGMA journal_mode = WAL;")
-                await conn.execute("PRAGMA synchronous = NORMAL;")
-                await conn.execute("PRAGMA busy_timeout = 5000;")
-            self._connection = conn
+        if self._connection is not None:
+            return self._connection
+        async with self._connect_lock:
+            if self._connection is None:
+                if self.db_path != ":memory:":
+                    Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+                conn = await aiosqlite.connect(self.db_path)
+                conn.row_factory = aiosqlite.Row
+                await conn.execute("PRAGMA foreign_keys = ON;")
+                if self.db_path != ":memory:":
+                    await conn.execute("PRAGMA journal_mode = WAL;")
+                    await conn.execute("PRAGMA synchronous = NORMAL;")
+                    await conn.execute("PRAGMA busy_timeout = 5000;")
+                self._connection = conn
+        assert self._connection is not None
         return self._connection
 
     async def _table_columns(self, table: str) -> set[str]:
@@ -92,6 +101,25 @@ class DatabaseManager:
             for col, ddl in additions:
                 if col not in cols:
                     await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+
+        # Older schemas did not enforce one active memory per group/scope/key.
+        # Collapse legacy duplicates before schema.sql creates the unique indexes;
+        # keep the most recently updated row and retain audit history separately.
+        if await self._table_exists("memories"):
+            await conn.execute(
+                """DELETE FROM memories WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY group_id, scope,
+                                     CASE WHEN scope='role' THEN COALESCE(role_id, '') ELSE '' END,
+                                     key
+                                   ORDER BY updated_at DESC, created_at DESC, rowid DESC
+                               ) AS rn
+                        FROM memories
+                    ) ranked WHERE rn > 1
+                )"""
+            )
         await conn.commit()
 
     async def init_schema(self, schema_path: str | None = None) -> None:
@@ -125,22 +153,25 @@ class DatabaseManager:
                 raise
 
     async def execute(self, query: str, params: tuple = ()) -> aiosqlite.Cursor:
-        conn = await self.connect()
-        cursor = await conn.execute(query, params)
-        await conn.commit()
-        return cursor
+        async with self._transaction_lock:
+            conn = await self.connect()
+            cursor = await conn.execute(query, params)
+            await conn.commit()
+            return cursor
 
     async def fetch_one(self, query: str, params: tuple = ()) -> dict[str, Any] | None:
-        conn = await self.connect()
-        async with conn.execute(query, params) as cursor:
-            row = await cursor.fetchone()
-        return dict(row) if row else None
+        async with self._transaction_lock:
+            conn = await self.connect()
+            async with conn.execute(query, params) as cursor:
+                row = await cursor.fetchone()
+            return dict(row) if row else None
 
     async def fetch_all(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
-        conn = await self.connect()
-        async with conn.execute(query, params) as cursor:
-            rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        async with self._transaction_lock:
+            conn = await self.connect()
+            async with conn.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
 
     async def integrity_check(self) -> bool:
         row = await self.fetch_one("PRAGMA quick_check")
@@ -150,6 +181,12 @@ class DatabaseManager:
         if self._connection:
             await self._connection.close()
             self._connection = None
+        # A DatabaseManager singleton can outlive an asyncio event loop during
+        # tests, embedded runtimes, or controlled restarts. asyncio.Lock binds
+        # lazily to the loop that first contends on it, so stale locks must not be
+        # carried into a new loop after the connection has been closed.
+        self._connect_lock = asyncio.Lock()
+        self._transaction_lock = asyncio.Lock()
 
 
 db = DatabaseManager.get_instance()

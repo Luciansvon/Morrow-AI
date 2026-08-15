@@ -28,6 +28,7 @@ class BaseLLMProvider(ABC):
         temperature: float = 0.7,
         response_format: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
         usage_context: dict[str, str | None] | None = None,
     ) -> LLMResponse:
         """Menghasilkan chat completion."""
