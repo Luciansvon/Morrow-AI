@@ -1,4 +1,6 @@
-"""Parser SKILL.md ringan dengan frontmatter aman dan default immutable."""
+"""Parser artefak SKILL.md yang ringan dan dependency-free."""
+
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +12,8 @@ class SkillDefinition(BaseModel):
     instructions: str = ""
     tools: list[str] = Field(default_factory=list)
     triggers: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    source_path: str | None = None
 
 
 class SkillLoader:
@@ -39,8 +43,15 @@ class SkillLoader:
             eligible_roles=SkillLoader._parse_list(meta.get("eligible_roles", "*")) or ["*"],
             tools=SkillLoader._parse_list(meta.get("tools", "")),
             triggers=SkillLoader._parse_list(meta.get("triggers", "")),
+            references=SkillLoader._parse_list(meta.get("references", "")),
             instructions=body,
         )
+
+    @classmethod
+    def load_skill_file(cls, path: str | Path) -> SkillDefinition:
+        skill_path = Path(path)
+        skill = cls.load_skill_from_text(skill_path.read_text(encoding="utf-8"))
+        return skill.model_copy(update={"source_path": str(skill_path)})
 
 
 skill_loader = SkillLoader()
