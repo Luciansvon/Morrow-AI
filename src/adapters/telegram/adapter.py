@@ -1,110 +1,126 @@
-"""Adapter Multi-Bot Telegram terpadu untuk sistem Morrow v0.2."""
+"""3 Telegram bots, one backend. Dedup is claimed before expensive attachment extraction."""
 
 import asyncio
+import io
+from pathlib import Path
 from typing import Any
 
 from src.adapters.base import BaseChannelAdapter
 from src.adapters.telegram.bot_registry import bot_registry
 from src.adapters.telegram.sender import telegram_sender
 from src.adapters.telegram.update_normalizer import TelegramUpdateNormalizer
-from src.core.types import RoleID
+from src.core.config import settings
+from src.core.normalizer import MessageNormalizer
+from src.core.types import AttachmentInfo, RoleID
+from src.files.pipeline import attachment_pipeline
 
 
 class TelegramMultiBotAdapter(BaseChannelAdapter):
-    """Adapter perpesanan Telegram yang mengelola 3 Bot independen pada 1 runtime."""
-
     def __init__(self):
         super().__init__()
-        self._dispatchers = {}
-        self._polling_tasks = []
+        self._dispatchers: dict[RoleID, Any] = {}
+        self._polling_tasks: list[asyncio.Task] = []
         self._running = False
 
+    async def _download_attachments(self, message: Any, bot: Any) -> list[AttachmentInfo]:
+        items: list[tuple[Any, str, int | None]] = []
+        document = getattr(message, "document", None)
+        photos = getattr(message, "photo", None) or []
+        if document:
+            items.append((document, document.file_name or f"document_{document.file_unique_id}", getattr(document, "file_size", None)))
+        elif photos:
+            photo = photos[-1]
+            items.append((photo, f"photo_{photo.file_unique_id}.jpg", getattr(photo, "file_size", None)))
+
+        result: list[AttachmentInfo] = []
+        max_bytes = settings.max_attachment_size_mb * 1024 * 1024
+        for telegram_file, filename, reported_size in items:
+            if reported_size and reported_size > max_bytes:
+                result.append(AttachmentInfo(
+                    file_id=str(getattr(telegram_file, "file_unique_id", "oversize")),
+                    original_name=Path(filename).name,
+                    detected_mime="application/octet-stream",
+                    file_path="",
+                    file_size=int(reported_size),
+                    is_supported=False,
+                    error_message=f"File melebihi batas {settings.max_attachment_size_mb} MB.",
+                ))
+                continue
+            try:
+                buffer = io.BytesIO()
+                downloaded = await bot.download(telegram_file, destination=buffer)
+                if hasattr(downloaded, "getvalue"):
+                    content = downloaded.getvalue()
+                else:
+                    content = buffer.getvalue()
+                result.append(await attachment_pipeline.process_bytes(filename, content))
+            except Exception as exc:
+                result.append(AttachmentInfo(
+                    file_id=str(getattr(telegram_file, "file_unique_id", "download_error")),
+                    original_name=Path(filename).name,
+                    detected_mime="application/octet-stream",
+                    file_path="",
+                    file_size=int(reported_size or 0),
+                    is_supported=False,
+                    error_message=f"Gagal mengunduh lampiran Telegram: {exc}",
+                ))
+        return result
+
     async def start(self) -> None:
-        """Memulai runtime 3 bot Telegram dalam satu event loop."""
-        try:
-            from aiogram import Dispatcher, types
+        from aiogram import Dispatcher, types
 
-            bot_registry.initialize_bots()
-            await bot_registry.fetch_bot_identities()
+        settings.validate_telegram_tokens()
+        settings.validate_telegram_access()
+        bot_registry.initialize_bots()
+        await bot_registry.fetch_bot_identities()
 
-            # Cetak status koneksi bot
-            for role in [RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR]:
-                username = bot_registry.get_username(role)
-                user_label = f" (@{username})" if username else ""
-                print(f"✅ {role.value.capitalize()} bot connected{user_label}")
+        for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR):
+            username = bot_registry.get_username(role)
+            print(f"✅ {role.value.capitalize()} bot connected" + (f" (@{username})" if username else ""))
+        print(f"✅ Allowed group loaded ({len(settings.allowlisted_groups)})")
+        print(f"✅ Whitelist loaded ({len(settings.whitelisted_users)})")
 
-            from src.core.config import settings
-            print(f"✅ Allowed group loaded ({len(settings.allowlisted_groups)} group: {', '.join(settings.allowlisted_groups)})")
-            print(f"✅ Whitelist loaded ({len(settings.whitelisted_users)} user: {', '.join(settings.whitelisted_users)})")
-            print("🚀 Morrow ready - Menunggu pesan di grup Telegram...")
+        for role, bot in bot_registry.get_all_bots().items():
+            dp = Dispatcher()
 
-            for role, bot in bot_registry.get_all_bots().items():
-                dp = Dispatcher()
+            def create_handler(current_role: RoleID, current_bot: Any):
+                async def message_handler(message: types.Message):
+                    if not self.message_handler:
+                        return
+                    norm = TelegramUpdateNormalizer.normalize_message(message, current_role)
+                    if not norm:
+                        return
+                    allowed, _ = MessageNormalizer.check_access(norm)
+                    if not allowed:
+                        return
+                    won = await MessageNormalizer.claim_event(norm.message_id, "telegram", norm.group_id)
+                    if not won:
+                        return
+                    norm.event_claimed = True
+                    norm.attachments = await self._download_attachments(message, current_bot)
+                    await self.message_handler(norm)
+                return message_handler
 
-                # Handler pesan masuk per bot
-                def create_handler(current_role: RoleID):
-                    async def message_handler(message: types.Message):
-                        if not self.message_handler:
-                            return
-
-                        norm_msg = TelegramUpdateNormalizer.normalize_message(
-                            message=message,
-                            received_by_role=current_role,
-                        )
-                        if norm_msg:
-                            await self.message_handler(norm_msg)
-
-                    return message_handler
-
-                dp.message.register(create_handler(role))
-                self._dispatchers[role] = dp
-
-                # Hapus webhook dan bersihkan koneksi lama sebelum polling
-                await bot.delete_webhook(drop_pending_updates=True)
-
-                # Jalankan polling per bot
-                task = asyncio.create_task(dp.start_polling(bot))
-                self._polling_tasks.append(task)
-
-            self._running = True
-        except Exception as e:
-            print(f"Peringatan: Gagal menjalankan Telegram Polling ({e}).")
+            dp.message.register(create_handler(role, bot))
+            self._dispatchers[role] = dp
+            await bot.delete_webhook(drop_pending_updates=settings.telegram_drop_pending_updates)
+            self._polling_tasks.append(asyncio.create_task(dp.start_polling(bot)))
+        self._running = True
+        print("🚀 Morrow ready - Menunggu pesan di grup Telegram...")
 
     async def stop(self) -> None:
-        """Menghentikan seluruh polling dan menutup sesi koneksi 3 bot."""
         self._running = False
         for task in self._polling_tasks:
             task.cancel()
-
+        if self._polling_tasks:
+            await asyncio.gather(*self._polling_tasks, return_exceptions=True)
         for bot in bot_registry.get_all_bots().values():
-            if hasattr(bot, "session") and hasattr(bot.session, "close"):
-                await bot.session.close()
+            session = getattr(bot, "session", None)
+            if session and hasattr(session, "close"):
+                await session.close()
 
-    async def send_message(
-        self,
-        group_id: str,
-        text: str,
-        from_role: RoleID | None = None,
-        reply_to_message_id: str | None = None,
-    ) -> str:
-        return await telegram_sender.send_message(
-            group_id=group_id,
-            text=text,
-            from_role=from_role,
-            reply_to_message_id=reply_to_message_id,
-        )
+    async def send_message(self, group_id: str, text: str, from_role: RoleID | None = None, reply_to_message_id: str | None = None) -> str:
+        return await telegram_sender.send_message(group_id, text, from_role, reply_to_message_id)
 
-    async def send_approval_prompt(
-        self,
-        group_id: str,
-        approval_id: str,
-        action_description: str,
-        parameters: dict[str, Any],
-    ) -> None:
-        await telegram_sender.send_approval_prompt(
-            group_id=group_id,
-            approval_id=approval_id,
-            action_description=action_description,
-            parameters=parameters,
-            requested_by_role=RoleID.MANAGER,
-        )
+    async def send_approval_prompt(self, group_id: str, approval_id: str, action_description: str, parameters: dict[str, Any]) -> None:
+        await telegram_sender.send_approval_prompt(group_id, approval_id, action_description, parameters)
