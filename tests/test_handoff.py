@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.core.types import RoleID
+from src.core.types import RoleID, TaskStatus
 from src.tasks.handoff import task_handoff
 from src.tasks.service import task_service
 
@@ -10,7 +10,6 @@ from src.tasks.service import task_service
 @pytest.mark.asyncio
 async def test_ac006_internal_handoff_without_user_approval():
     """AC-006: Tugas internal dapat didelegasikan antar agen tanpa persetujuan manual pengguna."""
-    # 1. Buat tugas baru oleh Manager
     task = await task_service.create_task(
         group_id="group_core_team_01",
         title="Riset Kompetitor Pasar",
@@ -19,7 +18,6 @@ async def test_ac006_internal_handoff_without_user_approval():
     )
     assert task.current_owner == RoleID.MANAGER
 
-    # 2. Delegasikan ke Marketing
     success, msg = await task_handoff.handoff_task(
         task_id=task.id,
         from_role=RoleID.MANAGER,
@@ -28,7 +26,6 @@ async def test_ac006_internal_handoff_without_user_approval():
     )
     assert success is True
 
-    # Periksa pemilik baru
     updated_task = await task_service.get_task(task.id)
     assert updated_task.current_owner == RoleID.MARKETING
 
@@ -42,15 +39,12 @@ async def test_ac006_anti_cycle_handoff_guard():
         initial_owner=RoleID.MANAGER,
     )
 
-    # Manager -> Marketing
     await task_handoff.handoff_task(
         task_id=task.id,
         from_role=RoleID.MANAGER,
         to_role=RoleID.MARKETING,
         reason="Oper alih 1",
     )
-
-    # Marketing -> Advisor
     await task_handoff.handoff_task(
         task_id=task.id,
         from_role=RoleID.MARKETING,
@@ -58,7 +52,6 @@ async def test_ac006_anti_cycle_handoff_guard():
         reason="Oper alih 2",
     )
 
-    # Advisor mencoba mengembalikan ke Manager yang sudah ada di attempted_agents -> Harus DITOLAK
     success, error_msg = await task_handoff.handoff_task(
         task_id=task.id,
         from_role=RoleID.ADVISOR,
@@ -67,3 +60,28 @@ async def test_ac006_anti_cycle_handoff_guard():
     )
     assert success is False
     assert "Anti-Cycle Guard" in error_msg
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED])
+async def test_terminal_task_cannot_be_reopened_by_handoff(terminal_status):
+    task = await task_service.create_task(
+        group_id="group_core_team_01",
+        title=f"Terminal task {terminal_status.value}",
+        initial_owner=RoleID.MANAGER,
+    )
+    assert await task_service.update_task_status(task.id, terminal_status)
+
+    success, message = await task_handoff.handoff_task(
+        task_id=task.id,
+        from_role=RoleID.MANAGER,
+        to_role=RoleID.MARKETING,
+        reason="should not reopen terminal task",
+    )
+
+    assert success is False
+    assert "terminal" in message.lower()
+    persisted = await task_service.get_task(task.id)
+    assert persisted is not None
+    assert persisted.status == terminal_status
+    assert persisted.current_owner == RoleID.MANAGER
