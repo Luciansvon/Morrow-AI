@@ -16,6 +16,11 @@ ECOSYSTEM_CONFIG = PROJECT_ROOT / "ecosystem.config.cjs"
 WINDOWS_STARTUP_SCRIPT = PROJECT_ROOT / "scripts" / "install_pm2_startup.ps1"
 
 
+def _is_windows() -> bool:
+    """Return whether the active runtime is Windows without exposing global os.name to tests."""
+    return os.name == "nt"
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="MORROW",
@@ -59,7 +64,7 @@ def _resolve_python_interpreter() -> str:
 
     # Microsoft Store Python exposes a zero-byte app-execution alias. Windows
     # can launch the command name, but PM2 cannot spawn the alias by absolute path.
-    if os.name == "nt":
+    if _is_windows():
         if shutil.which("python.exe"):
             return "python.exe"
         if shutil.which("python"):
@@ -131,7 +136,7 @@ def _foreground() -> None:
 
 def _install_startup(pm2: str, env: dict[str, str]) -> None:
     _start(pm2, env)
-    if os.name == "nt":
+    if _is_windows():
         powershell = shutil.which("powershell") or shutil.which("pwsh")
         if not powershell:
             raise FileNotFoundError("PowerShell tidak ditemukan untuk memasang startup task Windows.")
