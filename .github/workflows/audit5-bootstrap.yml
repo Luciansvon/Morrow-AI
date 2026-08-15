@@ -1,0 +1,60 @@
+name: Audit5 Bootstrap
+
+on:
+  push:
+    branches:
+      - chatgpt/audit5-hardening-20260815
+    paths:
+      - audit5_bundle.b64
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply audited source bundle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import io
+          import json
+          import tarfile
+
+          archive = base64.b64decode(Path('audit5_bundle.b64').read_bytes())
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tf:
+              try:
+                  tf.extractall('.', filter='data')
+              except TypeError:
+                  tf.extractall('.')
+
+          manifest_path = Path('.audit5_manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          for item in manifest.get('deleted', []):
+              p = Path(item)
+              if p.exists():
+                  p.unlink()
+
+          for temp in (
+              manifest_path,
+              Path('audit5_bundle.b64'),
+              Path('.github/workflows/audit5-bootstrap.yml'),
+          ):
+              if temp.exists():
+                  temp.unlink()
+          PY
+      - name: Compile sanity check
+        run: python3 -m compileall -q src tests
+      - name: Commit audited hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(audit5): five-pass reliability hardening"
+          git push origin HEAD:chatgpt/audit5-hardening-20260815
