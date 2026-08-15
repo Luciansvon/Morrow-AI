@@ -29,6 +29,8 @@ def test_personas_are_role_specific_and_keep_identity_honest():
 def test_fast_social_only_covers_simple_greetings():
     assert is_fast_social("halo semua") is True
     assert is_fast_social("pagi tim") is True
+    assert is_fast_social("Manager, halo") is True
+    assert is_fast_social("Manager dan Marketing, halo") is True
     assert is_fast_social("wkwkwk lu kocak") is False
     assert intent_detector.detect_intent("wkwkwk lu kocak").value == "social"
     assert intent_detector.detect_intent("anjir harga ini berapa?").value == "question"
@@ -151,6 +153,6 @@ async def test_rich_social_banter_uses_persona_runtime(monkeypatch):
             text="Manager, wkwkwk lu kocak",
         )
     )
-    assert result == "[manager]: lah lu yang mulai wkwk"
+    assert result == "lah lu yang mulai wkwk"
     assert seen["workload"] == WorkloadType.CASUAL
     assert seen["risk_level"] == RiskLevel.LOW
