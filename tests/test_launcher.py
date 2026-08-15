@@ -68,8 +68,11 @@ def test_pm2_env_resolves_windows_store_python_alias(monkeypatch, tmp_path):
 
     monkeypatch.setattr(launcher.sys, "executable", str(alias))
     monkeypatch.setattr(launcher.sys, "prefix", str(real_python.parent))
-
-    monkeypatch.setattr(launcher.os, "name", "nt")
-    monkeypatch.setattr(launcher.shutil, "which", lambda command: str(alias) if command == "python.exe" else None)
+    monkeypatch.setattr(launcher, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        launcher.shutil,
+        "which",
+        lambda command: str(alias) if command == "python.exe" else None,
+    )
 
     assert launcher._pm2_env()["MORROW_PYTHON"] == "python.exe"

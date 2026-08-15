@@ -1,5 +1,5 @@
 # 🏗️ Arsitektur & Struktur Proyek — Morrow v0.2
-*Status: `[AKTIF - DIAUDIT v0.2.2]` — Rujukan produk: [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md). Tidak semua Acceptance Contract diklaim terotomasi.*
+*Status: `[AKTIF - DIAUDIT v0.2.4]` — Rujukan produk: [`Morrow_PRD_v0.2_Skill_Based.md`](../Morrow_PRD_v0.2_Skill_Based.md). Tidak semua Acceptance Contract diklaim terotomasi.*
 
 Dokumen ini menjelaskan arsitektur teknis, susunan komponen, pembagian peran agen, dan batasan teknologi untuk proyek **Morrow** (Asisten Tim AI Pribadi dalam Grup Percakapan).
 
@@ -9,109 +9,175 @@ Dokumen ini menjelaskan arsitektur teknis, susunan komponen, pembagian peran age
 
 Morrow adalah sistem asisten grup multi-agen pribadi (*private multi-agent group assistant*) yang beroperasi layaknya sebuah tim kerja kecil di dalam grup percakapan. Sistem ini tidak menggabungkan semua kepribadian ke dalam satu bot percakapan tunggal, melainkan menjalankan 3 agen independen yang dapat berbagi tugas, mendelegasikan pekerjaan, dan berkoordinasi secara otomatis.
 
+Pengalaman percakapan ditargetkan terasa seperti berbicara dengan rekan yang punya karakter dan memori, bukan UI chatbot yang terus menjelaskan dirinya sendiri. Naturalitas ini tidak boleh berubah menjadi penipuan identitas: bila ditanya langsung, agent tetap menyatakan bahwa ia agent AI Morrow dan tidak mengarang pengalaman fisik atau riwayat hidup.
+
 ---
 
-## 2. Struktur Agen & Pembagian Peran
+## 2. Struktur Agen, Peran, dan Persona
 
 Morrow v0.2 memiliki 3 agen mandiri dengan identitas peran (*Role ID*) permanen:
 
-| ID Peran (*Role ID*) | Nama Agen | Tanggung Jawab Utama |
-|---|---|---|
-| `manager` | **Manager Agent** | Koordinasi tim, penentuan prioritas, manajemen tugas, penjadwalan, pelacakan dependensi, dan delegasi pekerjaan. |
-| `marketing` | **Marketing Agent** | Strategi kampanye, *positioning* merek, riset pasar, wawasan pelanggan, strategi konten, dan analisis performa pemasaran. |
-| `advisor` | **Advisor Agent** | Analisis keputusan, evaluasi risiko, pertimbangan *trade-off*, rekomendasi strategis, serta analisis dampak jangka pendek & panjang. |
+| ID Peran | Nama Agen | Tanggung Jawab Utama | Persona Kultural |
+|---|---|---|---|
+| `manager` | **Manager Agent** | Koordinasi tim, prioritas, task, jadwal, dependensi, delegasi. | Millennial Indonesia / early-internet native |
+| `marketing` | **Marketing Agent** | Kampanye, positioning, riset pasar, audience, content, measurement. | Gen Z Indonesia / modern-internet native |
+| `advisor` | **Advisor Agent** | Keputusan, risiko, trade-off, skenario, rekomendasi. | Older Indonesian / Boomer-inspired cultural lens |
+
+Persona disimpan sebagai layer tersendiri di `src/persona/`. Persona mengatur cultural memory, pola humor, ritme komunikasi, cross-generation familiarity, dan mode casual vs serious. Persona **tidak** mengubah role authority, tool permission, safety policy, atau fakta yang tersedia.
 
 ---
 
 ## 3. Peta Kemampuan Sistem (*Capability Map*)
 
-1. **`CAP-ACCESS` (Akses & Keamanan):** Memastikan hanya pengguna dan grup percakapan yang terdaftar dalam daftar putih (*whitelist/allowlist*) yang dapat mengakses tim AI.
-2. **`CAP-AGENTS` (Agen Mandiri):** Runtime mandiri untuk masing-masing peran agen.
-3. **`CAP-ROUTING` (Penyalur Pesan):** Memilih satu agen utama (*single primary owner*) untuk setiap pesan masuk dan mendukung pelacakan balasan pesan (*reply-aware routing*).
-4. **`CAP-SKILLS` (Keahlian/Skills):** Kemampuan modular yang dapat digunakan oleh peran tertentu atau dibagikan ke beberapa peran.
-5. **`CAP-TASKS` (Siklus Tugas):** Penyimpanan dan pelacakan status tugas (`todo`, `in_progress`, `blocked`, `done`, `cancelled`).
-6. **`CAP-HANDOFF` (Delegasi & Oper Alih):** Perpindahan kepemilikan tugas antar agen tanpa perlu meminta izin persetujuan manual pengguna untuk tugas internal.
-7. **`CAP-MEMORY` (Manajemen Memori):** Pemisahan antara memori peran (*role memory*), memori bersama (*shared memory*), dan riwayat audit perubahan (*audit history*).
-8. **`CAP-FILES` (Pemrosesan Berkas):** Analisis dokumen asli (*native parser* untuk XLSX, PDF, DOCX, CSV, dll.) serta pembaca teks/gambar (*OCR & Vision*) untuk dokumen hasil pindai.
-9. **`CAP-CHAT` (Diskusi Antar Agen):** Ruang percakapan otomatis antar agen yang dibatasi maksimal 4 putaran dan 3 agen untuk mencegah perulangan tanpa henti.
-10. **`CAP-APPROVAL` (Persetujuan Tindakan Luar):** Wajib meminta izin persetujuan eksplisit dari pengguna sebelum menjalankan aksi ke dunia luar (kirim email, ubah kalender, transaksi, posting media sosial).
-11. **`CAP-SAFETY` (Perlindungan & Batasan):** Pendeteksi konflik instruksi manusia, batas perulangan (*loop budget*), dan pencegahan duplikasi pesan.
+1. **`CAP-ACCESS` (Akses & Keamanan):** hanya pengguna dan grup allowlisted yang dapat mengakses tim.
+2. **`CAP-AGENTS` (Agen Mandiri):** runtime mandiri untuk masing-masing role.
+3. **`CAP-PERSONA` (Persona Kultural):** karakter, humor, cultural memory, dan conversational cadence terpisah dari role/skill.
+4. **`CAP-ROUTING` (Penyalur Pesan):** memilih satu primary owner dan mendukung reply-aware routing.
+5. **`CAP-SKILLS` (Keahlian/Skills):** capability modular per role/shared.
+6. **`CAP-TOOLS` (Agent Tool Runtime):** OpenRouter server tools + local user-defined tools dengan bounded loop dan policy fail-closed.
+7. **`CAP-TASKS` (Siklus Tugas):** status `todo`, `in_progress`, `blocked`, `waiting_user`, `done`, `failed`, `cancelled`.
+8. **`CAP-HANDOFF` (Delegasi):** perpindahan ownership internal antar-agent.
+9. **`CAP-MEMORY` (Manajemen Memori):** role/shared memory, hybrid retrieval, audit history.
+10. **`CAP-FILES` (Pemrosesan Berkas):** native parser, OCR, vision untuk attachment.
+11. **`CAP-CHAT` (Diskusi Antar Agen):** collective discussion yang dibatasi budget/loop guard.
+12. **`CAP-ACTIVITY` (Progress Preview):** status kerja sementara di Telegram + typing action.
+13. **`CAP-BROWSER` (Browser Contract):** interface backend-agnostic dengan klasifikasi READ/PREPARE/COMMIT.
+14. **`CAP-APPROVAL` (Persetujuan Tindakan Luar):** approval eksplisit sebelum external mutation.
+15. **`CAP-SAFETY` (Perlindungan):** conflict detector, loop budget, dedup, attachment trust boundary.
 
 ---
 
 ## 4. Batasan & Pilihan Teknologi (*Technical Constraints*)
 
-Berdasarkan bagian `TC-001` s.d. `TC-011` pada PRD:
-
-* **Model Kecerdasan Buatan (LLM):** DeepSeek sebagai penyedia penalaran utama secara *default*, namun terpasang di balik antarmuka modular sehingga dapat diganti di masa depan (*interchangeable provider*).
-* **Penyimpanan Data Terstruktur:** Menggunakan **SQLite** untuk menyimpan data tugas, konfigurasi, dan memori terstruktur.
-* **Penyimpanan Berkas Asli:** Berkas fisik disimpan terpisah di sistem penyimpanan berkas (*filesystem/object storage*), bukan dicampur di dalam memori AI.
-* **Penyimpanan Vektor:** Tidak menggunakan basis data vektor (*vector DB*) untuk kebutuhan MVP agar sistem tetap sederhana dan andal.
-* **Pengendalian Konkurensi:** Orkestrasi pesan menggunakan lock per-grup sehingga pekerjaan agen di grup berbeda tidak diserialkan secara global. SQLite memakai lock transaksi proses yang singkat untuk menjaga satu koneksi async tetap konsisten; lock database tidak mencakup panggilan LLM, Telegram, atau I/O jaringan.
-* **Format Berkas yang Didukung:** `PDF`, `DOCX`, `XLSX`, `CSV`, `TXT`, `MD`, `PPTX`, `PNG`, `JPG/JPEG`, `WEBP`.
+* **Model AI:** provider/model dipilih melalui `ModelPolicy`; OpenRouter menjadi gateway dan memungkinkan server tools lintas-model.
+* **Structured storage:** SQLite menjadi durable source of truth.
+* **Memory retrieval:** FTS5 + semantic embedding/`sqlite-vec` bila tersedia, dengan fallback lexical.
+* **File storage:** berkas asli tetap di filesystem/object storage, bukan di prompt/memory blob.
+* **Concurrency:** lock per-grup; transaksi SQLite dibuat pendek dan tidak mencakup panggilan LLM/network.
+* **Supported files:** `PDF`, `DOCX`, `XLSX`, `CSV`, `TXT`, `MD`, `PPTX`, `PNG`, `JPG/JPEG`, `WEBP`.
+* **Browser backend:** tidak ada hard dependency ke Ego Lite/Playwright/provider tertentu. Contract hidup di `src/browser/`.
+* **Side effects:** browser COMMIT, email, calendar, social post, transaction, dan mutasi akun wajib approval.
 
 ---
 
-## 5. Susunan Berkas Proyek & Domain Layer
+## 5. Tool Architecture
+
+### 5.1 Server tools
+
+Tool yang dioperasikan OpenRouter dikirim langsung melalui `tools` array:
 
 ```text
-📁 AI-TEAM-MAS FENDI/
-├── 📄 Morrow_PRD_v0.2_Skill_Based.md   (Sumber spesifikasi utama produk)
-├── 📄 PROMPT_TEMPLATES.md              (Kumpulan cetakan prompt dokumentasi)
-├── 📄 user.md                          (Profil preferensi interaksi pengguna)
-├── 📁 docs/                            (Pusat dokumentasi proyek)
-│   ├── 📄 ARCHITECTURE.md              (Dokumen arsitektur ini)
-│   ├── 📄 BUG_BACKLOG.md               (Catatan risiko & kendala yang belum selesai)
-│   ├── 📄 DECISIONS.md                 (Catatan keputusan arsitektur / ADR)
-│   ├── 📄 ERROR_SOLUTIONS.md           (Riwayat kendala nyata & solusinya)
-│   ├── 📄 RELEASE_NOTES.md             (Catatan rilis versi produk)
-│   ├── 📄 TESTING_GUIDE.md             (Panduan pengujian & skenario uji coba)
-│   ├── 📄 WORKLOG.md                   (Buku riwayat pekerjaan harian)
-│   └── 📁 archive/                     (Folder penyimpanan dokumen usang)
-│       └── 📄 README.md                (Indeks berkas arsip)
-└── 📁 src/                             (Kode sumber sistem berbasis Domain Layer)
-    ├── 📁 core/                        (Orkestrasi event loop & normalizer)
-    ├── 📁 routing/                     (Fast-path & semantic role router)
-    ├── 📁 agents/                      (Runtime independen: Manager, Marketing, Advisor)
-    ├── 📁 skills/                      (Loader SKILL.md, registry & skill router)
-    ├── 📁 tools/                       (Tool registry, policy & idempotent executor)
-    ├── 📁 tasks/                       (Task lifecycle, dependency, retry, handoff)
-    ├── 📁 memory/                      (Memory service, judge, shared facts, audit)
-    ├── 📁 llm/                         (Provider, OpenRouter, ModelPolicy, usage meter)
-    ├── 📁 files/                       (Intake, native parsers, extraction, OCR, vision)
-    ├── 📁 safety/                      (Conflict detector, anti-loop guard)
-    ├── 📁 approval/                    (Approval gateway, fingerprinting)
-    ├── 📁 storage/                     (SQLite WAL, 14 tabel relasional, sandboxed files)
-    └── 📁 adapters/                    (Telegram aiogram v3 & CLI adapter)
+openrouter:web_search  -> current/public information
+openrouter:web_fetch   -> fetch/extract URL content
+openrouter:datetime    -> current date/time in MORROW_TIMEZONE
+```
+
+Server tools dieksekusi oleh OpenRouter, bukan `tool_executor` lokal.
+
+### 5.2 User-defined local tools
+
+Local tools didaftarkan ke `ToolRegistry` dengan:
+
+- function coroutine;
+- description;
+- JSON Schema parameters;
+- optional eligible roles.
+
+Tool schema diberikan ke model sebagai standard function tool. Ketika model memanggilnya, `AgentRuntime` menjalankan bounded loop:
+
+```text
+LLM -> function call -> ToolPolicy -> ToolExecutor -> tool result -> LLM -> final response
+```
+
+Tool pertama yang aktif adalah `calculate`, sebuah evaluator aritmetika berbasis AST tanpa `eval()` atau arbitrary code execution.
+
+### 5.3 Fail-closed policy
+
+`ToolPolicy` wajib mengetahui tool sebelum tool dapat dieksekusi. Tool unknown gagal dengan `TOOL_POLICY_UNCLASSIFIED`. External actions tidak dapat dieksekusi tanpa approval/idempotency.
+
+---
+
+## 6. Browser Boundary
+
+`BrowserBackend` memisahkan Morrow dari implementasi browser tertentu dan mengambil ide task-space/control handoff tanpa menjadikan provider tertentu sebagai dependency wajib.
+
+Action class:
+
+- **READ**: navigate, inspect, snapshot, screenshot;
+- **PREPARE**: perubahan lokal/session seperti mengisi draft yang belum dikirim;
+- **COMMIT**: submit/send/post/purchase/delete atau external mutation lain.
+
+`COMMIT` harus dikonversi menjadi external action dan melewati approval gateway sebelum backend menjalankannya. Handoff ke user dipakai untuk login, captcha, atau review manual; agent tidak boleh merebut control kembali tanpa explicit continuation.
+
+---
+
+## 7. Susunan Berkas Proyek & Domain Layer
+
+```text
+Morrow-AI/
+├── Morrow_PRD_v0.2_Skill_Based.md
+├── PROMPT_TEMPLATES.md
+├── user.md
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── BUG_BACKLOG.md
+│   ├── DECISIONS.md
+│   ├── ERROR_SOLUTIONS.md
+│   ├── RELEASE_NOTES.md
+│   ├── TESTING_GUIDE.md
+│   └── WORKLOG.md
+└── src/
+    ├── adapters/        # Telegram/CLI + activity lifecycle
+    ├── agents/          # role runtimes + bounded tool loop
+    ├── approval/        # approval gateway + fingerprints
+    ├── browser/         # backend-neutral browser contract
+    ├── core/            # orchestrator/config/types
+    ├── files/           # native parsers/OCR/vision
+    ├── llm/             # OpenRouter/provider/model policy/usage
+    ├── memory/          # hybrid retrieval/vector index/vault/judge
+    ├── persona/         # generational/cultural personas
+    ├── routing/         # addressing/intent/role/social/task analysis
+    ├── safety/          # conflict/loop guards
+    ├── skills/          # SKILL.md loader/registry/router
+    ├── storage/         # SQLite + attachment metadata
+    ├── tasks/           # lifecycle/handoff
+    └── tools/           # registry/builtins/server tools/policy/executor
 ```
 
 ---
 
-## 6. Arsitektur Pipeline & Model AI Hibrida (Audit 15 Agustus 2026)
+## 8. Pipeline Runtime
 
-### A. Urutan Alur Peristiwa (Event Pipeline)
 ```text
-Event ➡️ Adapter ➡️ Normalize/Access Check ➡️ Dedup ➡️ Attachment Intake (Native/OCR/Vision)
-➡️ Fast-Path Router ➡️ Role Router ➡️ Primary Agent ➡️ Skill Router ➡️ Agent Execution
-➡️ Task/Memory/Handoff ➡️ Memory Judge ➡️ Response Channel
+Event
+  -> Adapter
+  -> Normalize + Access
+  -> Dedup
+  -> Attachment Intake
+  -> Addressing + Intent
+  -> Social Fast Path OR Primary Role
+  -> Persona Layer
+  -> Skill Router
+  -> Relevant Memory + Active Tasks
+  -> Telegram Activity Preview
+  -> Agent Execution
+       -> OpenRouter server tools (0..N, provider-managed)
+       -> Local function tools (bounded client loop)
+  -> Response
+  -> Activity Cleanup
+  -> Task/Memory Judge
 ```
 
-### B. Alokasi Model Berbasis Beban Kerja (`ModelPolicy.resolve`)
+Simple greetings stay zero-token. Rich social banter runs through persona-aware `CASUAL` workload. Work remains role-routed and budgeted.
+
+---
+
+## 9. Model AI Hibrida (Audit 15 Agustus 2026)
 
 > **Catatan operasional:** harga provider bersifat dinamis dan bukan kontrak arsitektur. ID model serta kebijakan routing yang berlaku ditentukan oleh `src/llm/model_catalog.py` dan `src/llm/model_policy.py`; biaya aktual dicatat melalui usage ledger.
-1. **Model Harian (Daily Drivers - 2 Model):**
-   - **`manager` (Planning):** `DeepSeek V4 Flash 0731` dengan penalaran dinamis (*low/high/xhigh*).
-   - **`marketing` (Konten/Visual):** `MiMo-V2.5`, native multimodal teks dan gambar.
-   - **`advisor` (Normal):** `DeepSeek V4 Flash 0731` (*reasoning: high*).
-   - **`router` & `memory_judge`:** `MiMo-V2.5 (non-thinking)` untuk klasifikasi JSON instan.
-2. **Model Spesialis & Eskalasi (2 Model):**
-   - **`marketing` (Creative Pro):** `MiniMax M3` untuk kampanye besar dan spreadsheet rumit.
-   - **`advisor` (Critical Decision):** `DeepSeek V4-Pro-0813` khusus keputusan berisiko tinggi dan sulit dibatalkan (*irreversible*).
-3. **Cadangan & Peninjau Independen (2 Model):**
-   - **Cadangan Darurat (*Provider Fallback*):** `GPT-5.6 Luna` saat DeepSeek mengalami *outage* atau rate limit.
-   - **Peninjau Kedua (*Cross-Check*):** `Claude Sonnet 5` untuk keputusan hukum/bisnis raksasa.
-4. **Jalur Berkas (MVP: Tanpa Audio/Video):**
-   - XLSX, DOCX, PPTX, PDF teks dibaca langsung oleh parser Python lokal (*native parser*).
-   - Pindaian dokumen / poster visual dianalisis oleh `MiMo-V2.5` (dengan eskalasi ke `MiniMax M3` untuk kasus visual yang sangat rumit).
 
-
+1. **Daily drivers:** Manager/Advisor memakai DeepSeek sesuai policy; Marketing memakai model multimodal sesuai catalog/policy.
+2. **Eskalasi:** workload/risk dapat menaikkan model ke tier yang lebih kuat.
+3. **Fallback:** provider client memiliki fallback konservatif untuk transient failure.
+4. **Files:** structured docs dibaca native; image/scanned docs menggunakan vision/OCR sesuai pipeline.
+5. **Tools:** model yang dipilih tetap dapat menerima OpenRouter server tools dan standard function tools selama provider route mendukung parameter tools.

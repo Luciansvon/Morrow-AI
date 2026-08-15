@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from src.core.types import RoleID, WorkloadType
 
-
 HUMAN_CONVERSATION_RULES = """
 ## ATURAN PERCAKAPAN NATURAL
 - Berinteraksi seperti rekan yang sudah akrab dengan pengguna, bukan seperti helpdesk atau brosur produk.
