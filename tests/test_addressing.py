@@ -7,6 +7,7 @@ import pytest
 from src.core.orchestrator import SystemOrchestrator
 from src.core.types import AddressingType, MessageIntent, NormalizedMessage, RoleID
 from src.routing.addressing import addressing_detector
+from src.routing.social import social_response
 from src.tasks.service import task_service
 
 
@@ -250,3 +251,27 @@ async def test_social_broadcast_does_not_create_task_or_pollute_durable_memory(o
 
     final_tasks = await task_service.list_active_tasks("group_core_team_01")
     assert len(final_tasks) == len(init_tasks)  # Tidak ada task baru yang dibuat!
+
+
+def test_social_responses_follow_each_agent_persona():
+    responses = {
+        role: social_response(role, "hai tim")
+        for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR)
+    }
+
+    assert len(set(responses.values())) == 3
+    assert "prioritas" in responses[RoleID.MANAGER]
+    assert "Marketing" in responses[RoleID.MARKETING]
+    assert "risiko" in responses[RoleID.ADVISOR]
+
+
+def test_time_based_social_responses_keep_each_agent_persona():
+    responses = {
+        role: social_response(role, "pagi semua")
+        for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR)
+    }
+
+    assert len(set(responses.values())) == 3
+    assert "arah kerja" in responses[RoleID.MANAGER]
+    assert "scroll" in responses[RoleID.MARKETING]
+    assert "risiko" in responses[RoleID.ADVISOR]
