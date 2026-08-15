@@ -51,7 +51,7 @@ class BaseChannelAdapter(ABC):
         from_role: RoleID,
     ) -> None:
         """Bersihkan status kerja sementara. Default no-op untuk adapter tanpa UI status."""
-        return None
+        return
 
     @abstractmethod
     async def send_approval_prompt(
