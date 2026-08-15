@@ -48,12 +48,14 @@ jobs:
           for temp in [
               manifest_path,
               Path('audit5_bundle.ready'),
-              Path('.github/workflows/audit5-bootstrap.yml'),
               *parts,
           ]:
               if temp.exists():
                   temp.unlink()
           PY
+      - name: Keep workflow files out of runner-authored commit
+        run: |
+          git checkout HEAD -- .github/workflows/audit5-bootstrap.yml .github/workflows/chatgpt-full-fix.yml
       - name: Compile sanity check
         run: python3 -m compileall -q src tests
       - name: Commit audited hardening
