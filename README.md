@@ -13,9 +13,9 @@
 ## 🌟 Fitur Utama (Key Capabilities)
 
 ### 1. 🎭 3 Bot Telegram Terpisah pada 1 Backend Terpadu
-* **Manager Bot** (`@morrow_manager_bot`): Koordinasi tim, penentuan prioritas tugas, pelacakan dependensi, dan delegasi spesialis.
-* **Marketing Bot** (`@morrow_marketing_bot`): Strategi kampanye, riset pasar, wawasan pelanggan, konten kreatif, dan copywriting persuasif.
-* **Advisor Bot** (`@morrow_advisor_bot`): Analisis risiko bisnis, evaluasi untung-rugi (*trade-offs*), pertimbangan hukum/finansial, dan mitigasi krisis.
+* **Manager Bot** (`@your_manager_bot`): Koordinasi tim, penentuan prioritas tugas, pelacakan dependensi, dan delegasi spesialis.
+* **Marketing Bot** (`@your_marketing_bot`): Strategi kampanye, riset pasar, wawasan pelanggan, konten kreatif, dan copywriting persuasif.
+* **Advisor Bot** (`@your_advisor_bot`): Analisis risiko bisnis, evaluasi untung-rugi (*trade-offs*), pertimbangan hukum/finansial, dan mitigasi krisis.
 * **Satu Runtime Bersama:** Berbagi satu database SQLite (WAL mode), satu task system, satu shared memory, dan satu orchestrator tanpa dependensi aplikasi ganda.
 
 ### 2. 🗣️ Collective & Multi-Agent Addressing Cerdas
@@ -106,14 +106,14 @@ cp .env.example .env
 
 Sesuaikan isi `.env`:
 ```env
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 
-TELEGRAM_MANAGER_BOT_TOKEN=8901364404:AAxxxxxxxxxxxxxxxxxxxx
-TELEGRAM_MARKETING_BOT_TOKEN=8716245519:AAxxxxxxxxxxxxxxxxxxxx
-TELEGRAM_ADVISOR_BOT_TOKEN=8698394941:AAxxxxxxxxxxxxxxxxxxxx
+TELEGRAM_MANAGER_BOT_TOKEN=your_telegram_manager_bot_token_here
+TELEGRAM_MARKETING_BOT_TOKEN=your_telegram_marketing_bot_token_here
+TELEGRAM_ADVISOR_BOT_TOKEN=your_telegram_advisor_bot_token_here
 
-TELEGRAM_ALLOWED_GROUP_IDS=-5506738427
-TELEGRAM_WHITELIST_USER_IDS=5497600429
+TELEGRAM_ALLOWED_GROUP_IDS=-100xxxxxxxxxx
+TELEGRAM_WHITELIST_USER_IDS=xxxxxxxxx
 
 MORROW_ENV=development
 LOG_LEVEL=INFO
@@ -142,11 +142,11 @@ Saat startup berhasil, console akan menampilkan:
   🚀 Memulai Asisten Tim AI Morrow v0.2
 ============================================================
 ✅ Database initialized
-✅ Manager bot connected (@morrow_manager_bot)
-✅ Marketing bot connected (@morrow_marketing_bot)
-✅ Advisor bot connected (@morrow_advisor_bot)
-✅ Allowed group loaded (1 group: -5506738427)
-✅ Whitelist loaded (1 user: 5497600429)
+✅ Manager bot connected (@your_manager_bot)
+✅ Marketing bot connected (@your_marketing_bot)
+✅ Advisor bot connected (@your_advisor_bot)
+✅ Allowed group loaded (1 group: -100xxxxxxxxxx)
+✅ Whitelist loaded (1 user: xxxxxxxxx)
 🚀 Morrow ready - Menunggu pesan di grup Telegram...
 ```
 
