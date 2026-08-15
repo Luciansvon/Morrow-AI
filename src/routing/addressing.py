@@ -17,24 +17,36 @@ class AddressingDetector:
     """Bedakan explicit agent address, collective vocative, dan object quantifier."""
 
     COLLECTIVE_VOCATIVE_PATTERNS: ClassVar[list[str]] = [
-        r"^(halo|hai|hey|hei|pagi|siang|sore|malam|selamat\s+\w+)\s+"
-        r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b",
-        r"\b(apa\s+kabar|gimana\s+kabarnya)\s+"
-        r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b",
-        r"^(kalian|kalian\s+semua|semua\s+orang)\s+"
-        r"(gimana|ada|siap|lagi\s+apa|dengerin|tolong)\b",
+        (
+            r"^(halo|hai|hey|hei|pagi|siang|sore|malam|selamat\s+\w+)\s+"
+            r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b"
+        ),
+        (
+            r"\b(apa\s+kabar|gimana\s+kabarnya)\s+"
+            r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b"
+        ),
+        (
+            r"^(kalian|kalian\s+semua|semua\s+orang)\s+"
+            r"(gimana|ada|siap|lagi\s+apa|dengerin|tolong)\b"
+        ),
         r"^(semua|semuanya|tim|team)\s*,\s*",
         r"\b(semua\s+siap|semua\s+ada|tim\s+siap|tim\s+standby)\b",
         r"^(semua|semuanya)\s+(siap|ada|dengerin|tolong\s+dengar)\b",
     ]
 
     OBJECT_QUANTIFIER_PATTERNS: ClassVar[list[str]] = [
-        r"\b(hitung|cek|analisis|baca|rangkum|hapus|bandingkan|periksa|ubah|revisi)\s+"
-        r"(semua|semuanya)\b",
-        r"\bsemua\s+(harga|produk|file|berkas|task|tugas|campaign|kampanye|data|hasil|"
-        r"dokumen|gambar|transaksi|nominal|pesan)\b",
-        r"\bsemua\s+\w+\s+(ini\s+)?"
-        r"(mahal|murah|salah|rusak|naik|turun|kurang|lebih|error|bug|batal)\b",
+        (
+            r"\b(hitung|cek|analisis|baca|rangkum|hapus|bandingkan|periksa|ubah|revisi)\s+"
+            r"(semua|semuanya)\b"
+        ),
+        (
+            r"\bsemua\s+(harga|produk|file|berkas|task|tugas|campaign|kampanye|data|hasil|"
+            r"dokumen|gambar|transaksi|nominal|pesan)\b"
+        ),
+        (
+            r"\bsemua\s+\w+\s+(ini\s+)?"
+            r"(mahal|murah|salah|rusak|naik|turun|kurang|lebih|error|bug|batal)\b"
+        ),
     ]
 
     @staticmethod

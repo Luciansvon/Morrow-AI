@@ -64,8 +64,10 @@ class LoopGuard:
                 )
                 return (
                     False,
-                    f"Batas maksimal {LoopGuard.MAX_TURNS} putaran diskusi habis. "
-                    "Status dialihkan ke 'waiting_user'.",
+                    (
+                        f"Batas maksimal {LoopGuard.MAX_TURNS} putaran diskusi habis. "
+                        "Status dialihkan ke 'waiting_user'."
+                    ),
                     turn_count,
                 )
 

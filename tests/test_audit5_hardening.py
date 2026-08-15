@@ -17,12 +17,19 @@ from src.adapters.telegram.update_normalizer import TelegramUpdateNormalizer
 from src.approval.gateway import approval_gateway
 from src.core.config import settings
 from src.core.orchestrator import SystemOrchestrator
-from src.core.types import AttachmentInfo, AddressingType, MemoryScope, NormalizedMessage, RoleID, TaskStatus
+from src.core.types import (
+    AddressingType,
+    AttachmentInfo,
+    MemoryScope,
+    NormalizedMessage,
+    RoleID,
+    TaskStatus,
+)
 from src.files.intake import file_intake
 from src.files.vision.model import vision_analyzer
+from src.memory.service import memory_service
 from src.routing.addressing import addressing_detector
 from src.routing.fast_path import fast_path_router
-from src.memory.service import memory_service
 from src.storage.attachments import attachment_storage
 from src.storage.sqlite import DatabaseManager, db
 from src.tasks.handoff import task_handoff
@@ -96,8 +103,6 @@ async def test_registered_bot_usernames_are_valid_multi_agent_addresses(monkeypa
 
 @pytest.mark.asyncio
 async def test_custom_display_names_work_for_multi_agent_addressing():
-    from src.storage.sqlite import DatabaseManager, db
-
     await db.execute("UPDATE agents SET display_name='Ari' WHERE role_id='manager'")
     await db.execute("UPDATE agents SET display_name='Naya' WHERE role_id='marketing'")
     result = await addressing_detector.detect(
@@ -481,8 +486,8 @@ async def test_rejected_file_is_not_persisted_as_attachment():
 
 @pytest.mark.asyncio
 async def test_sync_spreadsheet_parser_is_offloaded_from_event_loop(monkeypatch, tmp_path):
-    from src.files.pipeline import attachment_pipeline
     from src.files import pipeline as pipeline_module
+    from src.files.pipeline import attachment_pipeline
 
     csv_path = tmp_path / "slow.csv"
     csv_path.write_text("a,b\n1,2\n", encoding="utf-8")

@@ -2,7 +2,6 @@
 
 from src.core.types import RoleID
 
-
 SOCIAL_RESPONSES = {
     RoleID.MANAGER: "Halo Bos, siap.",
     RoleID.MARKETING: "Halo Bos, siap.",
