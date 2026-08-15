@@ -181,6 +181,12 @@ class DatabaseManager:
         if self._connection:
             await self._connection.close()
             self._connection = None
+        # A DatabaseManager singleton can outlive an asyncio event loop during
+        # tests, embedded runtimes, or controlled restarts. asyncio.Lock binds
+        # lazily to the loop that first contends on it, so stale locks must not be
+        # carried into a new loop after the connection has been closed.
+        self._connect_lock = asyncio.Lock()
+        self._transaction_lock = asyncio.Lock()
 
 
 db = DatabaseManager.get_instance()
