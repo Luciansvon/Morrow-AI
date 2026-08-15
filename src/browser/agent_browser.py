@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from src.browser.base import BrowserActionClass, BrowserBackend
 from src.core.config import settings
@@ -17,12 +17,12 @@ class BrowserBackendUnavailableError(RuntimeError):
 class AgentBrowserBackend(BrowserBackend):
     """BrowserBackend implementation backed by the vercel-labs agent-browser CLI."""
 
-    _ACTION_CLASS_ORDER = {
+    _ACTION_CLASS_ORDER: ClassVar[dict[BrowserActionClass, int]] = {
         BrowserActionClass.READ: 0,
         BrowserActionClass.PREPARE: 1,
         BrowserActionClass.COMMIT: 2,
     }
-    _MIN_ACTION_CLASS = {
+    _MIN_ACTION_CLASS: ClassVar[dict[str, BrowserActionClass]] = {
         "fill": BrowserActionClass.PREPARE,
         "type": BrowserActionClass.PREPARE,
         "select": BrowserActionClass.PREPARE,
