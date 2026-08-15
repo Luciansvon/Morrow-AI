@@ -1,0 +1,97 @@
+name: Audit5 Lint Fix
+
+on:
+  push:
+    branches:
+      - chatgpt/audit5-hardening-20260815
+    paths:
+      - audit5_lint.ready
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply deterministic lint fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/routing/addressing.py')
+          s = p.read_text(encoding='utf-8')
+          replacements = {
+              '        r"^(halo|hai|hey|hei|pagi|siang|sore|malam|selamat\\s+\\w+)\\s+"\n        r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\\b",': '        (\n            r"^(halo|hai|hey|hei|pagi|siang|sore|malam|selamat\\s+\\w+)\\s+"\n            r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\\b"\n        ),',
+              '        r"\\b(apa\\s+kabar|gimana\\s+kabarnya)\\s+"\n        r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\\b",': '        (\n            r"\\b(apa\\s+kabar|gimana\\s+kabarnya)\\s+"\n            r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\\b"\n        ),',
+              '        r"^(kalian|kalian\\s+semua|semua\\s+orang)\\s+"\n        r"(gimana|ada|siap|lagi\\s+apa|dengerin|tolong)\\b",': '        (\n            r"^(kalian|kalian\\s+semua|semua\\s+orang)\\s+"\n            r"(gimana|ada|siap|lagi\\s+apa|dengerin|tolong)\\b"\n        ),',
+              '        r"\\b(hitung|cek|analisis|baca|rangkum|hapus|bandingkan|periksa|ubah|revisi)\\s+"\n        r"(semua|semuanya)\\b",': '        (\n            r"\\b(hitung|cek|analisis|baca|rangkum|hapus|bandingkan|periksa|ubah|revisi)\\s+"\n            r"(semua|semuanya)\\b"\n        ),',
+              '        r"\\bsemua\\s+(harga|produk|file|berkas|task|tugas|campaign|kampanye|data|hasil|"\n        r"dokumen|gambar|transaksi|nominal|pesan)\\b",': '        (\n            r"\\bsemua\\s+(harga|produk|file|berkas|task|tugas|campaign|kampanye|data|hasil|"\n            r"dokumen|gambar|transaksi|nominal|pesan)\\b"\n        ),',
+              '        r"\\bsemua\\s+\\w+\\s+(ini\\s+)?"\n        r"(mahal|murah|salah|rusak|naik|turun|kurang|lebih|error|bug|batal)\\b",': '        (\n            r"\\bsemua\\s+\\w+\\s+(ini\\s+)?"\n            r"(mahal|murah|salah|rusak|naik|turun|kurang|lebih|error|bug|batal)\\b"\n        ),',
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise RuntimeError(f'addressing replacement target missing: {old[:60]}')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/routing/social.py')
+          s = p.read_text(encoding='utf-8')
+          old = 'from src.core.types import RoleID\n\nSOCIAL_RESPONSES'
+          if old not in s:
+              raise RuntimeError('social import target missing')
+          p.write_text(s.replace(old, 'from src.core.types import RoleID\nSOCIAL_RESPONSES', 1), encoding='utf-8')
+
+          p = Path('src/routing/task_analysis.py')
+          s = p.read_text(encoding='utf-8')
+          if 're.I)' not in s:
+              raise RuntimeError('task_analysis re.I targets missing')
+          p.write_text(s.replace('re.I)', 're.IGNORECASE)'), encoding='utf-8')
+
+          p = Path('src/safety/loop_guard.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''                    f"Batas maksimal {LoopGuard.MAX_TURNS} putaran diskusi habis. "\n                    "Status dialihkan ke 'waiting_user'.",'''
+          new = '''                    (\n                        f"Batas maksimal {LoopGuard.MAX_TURNS} putaran diskusi habis. "\n                        "Status dialihkan ke 'waiting_user'."\n                    ),'''
+          if old not in s:
+              raise RuntimeError('loop_guard concat target missing')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('tests/test_audit5_hardening.py')
+          s = p.read_text(encoding='utf-8')
+          old = 'from src.core.types import AttachmentInfo, AddressingType, MemoryScope, NormalizedMessage, RoleID, TaskStatus\n'
+          new = '''from src.core.types import (\n    AddressingType,\n    AttachmentInfo,\n    MemoryScope,\n    NormalizedMessage,\n    RoleID,\n    TaskStatus,\n)\n'''
+          if old not in s:
+              raise RuntimeError('test core.types import target missing')
+          s = s.replace(old, new, 1)
+          s = s.replace(
+              'from src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\nfrom src.memory.service import memory_service\n',
+              'from src.memory.service import memory_service\nfrom src.routing.addressing import addressing_detector\nfrom src.routing.fast_path import fast_path_router\n',
+              1,
+          )
+          inner = '    from src.storage.sqlite import DatabaseManager, db\n\n'
+          if inner not in s:
+              raise RuntimeError('test duplicate sqlite import target missing')
+          s = s.replace(inner, '', 1)
+          s = s.replace(
+              '    from src.files.pipeline import attachment_pipeline\n    from src.files import pipeline as pipeline_module\n',
+              '    from src.files import pipeline as pipeline_module\n    from src.files.pipeline import attachment_pipeline\n',
+              1,
+          )
+          p.write_text(s, encoding='utf-8')
+
+          Path('audit5_lint.ready').unlink(missing_ok=True)
+          PY
+      - name: Compile sanity check
+        run: python3 -m compileall -q src tests
+      - name: Commit source-only lint fixes
+        run: |
+          git checkout HEAD -- .github/workflows/audit5-lint-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(audit5): resolve strict lint findings"
+          git push origin HEAD:chatgpt/audit5-hardening-20260815
