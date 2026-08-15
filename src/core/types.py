@@ -19,7 +19,9 @@ class TaskStatus(str, Enum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
+    WAITING_USER = "waiting_user"
     DONE = "done"
+    FAILED = "failed"
     CANCELLED = "cancelled"
 
 
@@ -40,7 +42,10 @@ class ApprovalStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    EXECUTING = "executing"
     EXECUTED = "executed"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
 
 
 class WorkloadType(str, Enum):
@@ -59,17 +64,17 @@ class RiskLevel(str, Enum):
 
 
 class AddressingType(str, Enum):
-    NONE = "none"                       # Bukan sapaan agen (misal: "hitung semua harga ini")
-    SINGLE_AGENT = "single_agent"       # 1 agen spesifik (misal: "Manager, cek task ini")
-    MULTIPLE_AGENTS = "multiple_agents" # Subset agen (misal: "Manager dan Marketing, halo")
-    ALL_AGENTS = "all_agents"           # Seluruh tim (misal: "halo semua", "hai tim")
+    NONE = "none"
+    SINGLE_AGENT = "single_agent"
+    MULTIPLE_AGENTS = "multiple_agents"
+    ALL_AGENTS = "all_agents"
 
 
 class MessageIntent(str, Enum):
-    SOCIAL = "social"                   # Sapaan, basa-basi, cek kehadiran
-    WORK_REQUEST = "work_request"       # Permintaan tugas kerja / strategi
-    QUESTION = "question"               # Pertanyaan seputar status / informasi
-    COMMAND = "command"                 # Perintah tindakan eksternal
+    SOCIAL = "social"
+    WORK_REQUEST = "work_request"
+    QUESTION = "question"
+    COMMAND = "command"
     OTHER = "other"
 
 
@@ -107,12 +112,14 @@ class NormalizedMessage(BaseModel):
     sender_id: str
     sender_name: str = ""
     text: str = ""
+    platform: str = "telegram"
     reply_to_message_id: str | None = None
     received_by_bot_role: RoleID | None = None
     bot_identity: str | None = None
     attachments: list[AttachmentInfo] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=utc_now)
     raw_event: dict[str, Any] | None = None
+    event_claimed: bool = False
 
 
 class TaskModel(BaseModel):
@@ -121,9 +128,11 @@ class TaskModel(BaseModel):
     description: str = ""
     current_owner: RoleID
     status: TaskStatus = TaskStatus.TODO
+    group_id: str = "__global__"
     dependencies: list[str] = Field(default_factory=list)
     attempted_agents: list[RoleID] = Field(default_factory=list)
     retry_count: int = 0
+    max_retries: int = 3
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -132,6 +141,7 @@ class MemoryItem(BaseModel):
     id: str
     scope: MemoryScope
     role_id: RoleID | None = None
+    group_id: str = "__global__"
     key: str
     value: str
     memory_type: MemoryType = MemoryType.FACT
@@ -146,6 +156,7 @@ class ApprovalRequest(BaseModel):
     parameter_hash: str
     requested_by_role: RoleID
     idempotency_key: str
+    group_id: str = "__global__"
     status: ApprovalStatus = ApprovalStatus.PENDING
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
@@ -157,6 +168,8 @@ class LLMUsageRecord(BaseModel):
     request_id: str
     task_id: str | None = None
     role_id: str | None = None
+    group_id: str | None = None
+    thread_id: str | None = None
     model: str
     provider: str = "openrouter"
     input_tokens: int = 0
@@ -166,3 +179,10 @@ class LLMUsageRecord(BaseModel):
     cost_usd: float = 0.0
     latency_ms: int = 0
     timestamp: datetime = Field(default_factory=utc_now)
+
+
+class TaskAnalysis(BaseModel):
+    workload: WorkloadType = WorkloadType.ROUTINE
+    risk_level: RiskLevel = RiskLevel.LOW
+    collaborators: list[RoleID] = Field(default_factory=list)
+    reason: str = ""
