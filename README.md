@@ -175,14 +175,18 @@ Aturan desain utama:
 
 - Python 3.11+
 - Git
+- Node.js + npm, hanya untuk PM2 process manager
 
 ### 2. Clone & install
 
 ```powershell
 git clone https://github.com/Luciansvon/Morrow-AI.git
 cd Morrow-AI
-pip install -r requirements.txt
+python -m pip install -e ".[dev]"
+npm install -g pm2
 ```
+
+Install editable membuat command **`MORROW`** tersedia di terminal. Untuk runtime tanpa tool development, gunakan `python -m pip install -e .`.
 
 ### 3. Environment
 
@@ -228,11 +232,34 @@ pytest -q
 
 CI menjalankan Ruff + pytest pada Python **3.11 dan 3.12**.
 
-### 6. Run
+### 6. Run dengan satu command
 
 ```powershell
-python -m src.main
+MORROW
 ```
+
+Tanpa subcommand, `MORROW` akan start Morrow melalui PM2. Jika proses `morrow` sudah terdaftar, command yang sama akan melakukan restart dengan environment terbaru. Setelah start/restart berhasil, launcher menjalankan `pm2 save`, sehingga daftar proses tersimpan untuk proses resurrection/startup.
+
+PM2 menjalankan hanya **1 instance** Morrow, mematikan file watch, dan memakai exponential restart backoff. Jika polling Telegram gagal sampai runtime keluar, PM2 akan menyalakan proses lagi. Terminal yang dipakai untuk menjalankan `MORROW` boleh ditutup setelah proses aktif.
+
+Command kontrol:
+
+| Command | Fungsi |
+|---|---|
+| `MORROW` | Start atau restart Morrow lewat PM2, lalu save process list |
+| `MORROW status` | Lihat status proses Morrow |
+| `MORROW logs` | Streaming log PM2 untuk Morrow |
+| `MORROW restart` | Restart manual + update environment |
+| `MORROW stop` | Stop proses dan simpan state PM2 |
+| `MORROW delete` | Hapus proses dari PM2 dan simpan process list baru |
+| `MORROW foreground` | Jalankan langsung tanpa PM2 untuk debugging |
+| `MORROW startup` | Siapkan proses agar dapat dipulihkan setelah reboot/sign-in |
+
+#### Startup setelah reboot
+
+**Windows:** `MORROW startup` membuat Windows Scheduled Task untuk user saat ini. Task menjalankan `pm2 resurrect` setelah user sign-in, memakai process list yang sudah disimpan oleh PM2.
+
+**Linux/macOS:** `MORROW startup` menjalankan `pm2 startup`. PM2 dapat mencetak satu command privileged/sudo yang harus dijalankan sekali sesuai init system mesin tersebut. Process list Morrow sudah disimpan oleh launcher.
 
 Startup normal menginisialisasi database serta long-term memory indexes/mirror sebelum adapter Telegram mulai menerima pesan.
 
@@ -255,6 +282,9 @@ Startup normal menginisialisasi database serta long-term memory indexes/mirror s
 
 ```text
 Morrow-AI/
+├── ecosystem.config.cjs       # PM2 keep-alive / restart policy
+├── scripts/
+│   └── install_pm2_startup.ps1 # Windows startup via Scheduled Task
 ├── skills/                    # Katalog 16 modular SKILL.md
 │   ├── manager/
 │   ├── marketing/
@@ -267,6 +297,7 @@ Morrow-AI/
 │   ├── approval/              # Scoped external-action approval
 │   ├── core/                  # Orchestrator, config, shared types
 │   ├── files/                 # Native parsers, OCR, vision pipeline
+│   ├── launcher.py            # MORROW command + PM2 process controls
 │   ├── llm/                   # Provider client, policy, usage metering
 │   ├── memory/                # Hybrid retrieval, vector index, Markdown vault, judge
 │   ├── routing/               # Addressing, intent, role routing, task analysis
