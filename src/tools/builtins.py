@@ -7,7 +7,6 @@ from typing import Any
 
 from src.tools.registry import tool_registry
 
-
 _BIN_OPS: dict[type[ast.operator], Any] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
