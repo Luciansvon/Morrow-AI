@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 APP_NAME = "morrow"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
