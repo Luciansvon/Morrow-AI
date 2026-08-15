@@ -85,4 +85,60 @@ class SystemOrchestrator:
                 role_id=primary_role,
             )
 
+            # 9. Koordinasi Antar-Agen Backend Terkendali (Backend-Controlled Delegation)
+            delegation_target = None
+            lower_resp = response_text.lower()
+            if primary_role == RoleID.MANAGER:
+                if any(kw in lower_resp for kw in ["delegasikan ke marketing", "serahkan ke marketing", "@marketing", "tindak lanjut marketing"]):
+                    delegation_target = RoleID.MARKETING
+                elif any(kw in lower_resp for kw in ["delegasikan ke advisor", "serahkan ke advisor", "@advisor", "tindak lanjut advisor"]):
+                    delegation_target = RoleID.ADVISOR
+            elif primary_role == RoleID.MARKETING:
+                if any(kw in lower_resp for kw in ["delegasikan ke advisor", "konsultasikan ke advisor", "@advisor"]):
+                    delegation_target = RoleID.ADVISOR
+
+            if delegation_target and delegation_target != primary_role:
+                from src.tasks.handoff import task_handoff
+                new_task = await task_service.create_task(
+                    group_id=message.group_id,
+                    title=f"Delegasi dari {primary_role.value.capitalize()}",
+                    description=message.text,
+                    initial_owner=primary_role,
+                )
+                await task_handoff.handoff_task(
+                    task_id=new_task.id,
+                    from_role=primary_role,
+                    to_role=delegation_target,
+                    reason=f"Delegasi otomatis dari {primary_role.value}",
+                )
+
+                delegated_agent = self._agents[delegation_target]
+                handoff_msg = NormalizedMessage(
+                    message_id=f"handoff_{message.message_id}",
+                    group_id=message.group_id,
+                    sender_id=message.sender_id,
+                    sender_name=message.sender_name,
+                    text=f"[Pesan dari {primary_role.value.capitalize()}]: {response_text}\n\nInstruksi awal: {message.text}",
+                    reply_to_message_id=sent_msg_id,
+                )
+                delegated_response = await delegated_agent.execute(
+                    handoff_msg,
+                    handoff_payload={"from_role": primary_role.value, "task_id": new_task.id, "initial_instruction": message.text},
+                )
+
+                delegated_msg_id = await self.adapter.send_message(
+                    group_id=message.group_id,
+                    text=delegated_response,
+                    from_role=delegation_target,
+                    reply_to_message_id=sent_msg_id,
+                )
+                bot_id_str = f"bot_{delegation_target.value}"
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO message_agent_map (platform_message_id, originating_role_id, bot_identity, group_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (delegated_msg_id, delegation_target.value, bot_id_str, message.group_id),
+                )
+
             return response_text

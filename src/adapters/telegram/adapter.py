@@ -27,6 +27,17 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
             bot_registry.initialize_bots()
             await bot_registry.fetch_bot_identities()
 
+            # Cetak status koneksi bot
+            for role in [RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR]:
+                username = bot_registry.get_username(role)
+                user_label = f" (@{username})" if username else ""
+                print(f"✅ {role.value.capitalize()} bot connected{user_label}")
+
+            from src.core.config import settings
+            print(f"✅ Allowed group loaded ({len(settings.allowlisted_groups)} group: {', '.join(settings.allowlisted_groups)})")
+            print(f"✅ Whitelist loaded ({len(settings.whitelisted_users)} user: {', '.join(settings.whitelisted_users)})")
+            print("🚀 Morrow ready - Menunggu pesan di grup Telegram...")
+
             for role, bot in bot_registry.get_all_bots().items():
                 dp = Dispatcher()
 

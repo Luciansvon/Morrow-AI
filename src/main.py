@@ -18,16 +18,21 @@ async def main():
     # Inisialisasi struktur database SQLite
     await db.init_schema()
     settings.ensure_directories()
+    print("✅ Database initialized")
 
-    # Pilih Channel Adapter
-    if settings.channel_adapter.lower() == "telegram":
+    # Pilih Channel Adapter (Otomatis Telegram jika token dikonfigurasi)
+    use_telegram = (
+        settings.channel_adapter.lower() == "telegram"
+        or (settings.telegram_manager_bot_token and settings.telegram_marketing_bot_token)
+    )
+
+    if use_telegram:
         adapter = TelegramMultiBotAdapter()
     else:
         adapter = CLIAdapter()
 
     orchestrator = SystemOrchestrator(adapter)
     await adapter.start()
-    print("✅ Sistem siap menerima pesan.")
 
     if isinstance(adapter, CLIAdapter):
         print("\nKetik 'keluar' atau tekan Ctrl+C untuk berhenti.")
@@ -49,6 +54,13 @@ async def main():
                 await orchestrator.handle_incoming_message(msg)
             except (KeyboardInterrupt, EOFError):
                 break
+    else:
+        # Loop standby untuk telegram multi-bot
+        try:
+            while adapter._running:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
 
     await adapter.stop()
     await db.close()
