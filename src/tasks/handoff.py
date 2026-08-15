@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import Any
 
-from src.core.types import RoleID
+from src.core.types import RoleID, TaskStatus
 from src.storage.sqlite import db
 
 
@@ -22,7 +22,7 @@ class TaskHandoffService:
 
         async with db.transaction() as conn:
             cursor = await conn.execute(
-                "SELECT current_owner FROM tasks WHERE id=?",
+                "SELECT current_owner, status FROM tasks WHERE id=?",
                 (task_id,),
             )
             raw = await cursor.fetchone()
@@ -31,6 +31,13 @@ class TaskHandoffService:
             current_owner = RoleID(raw["current_owner"])
             if current_owner != from_role:
                 return False, f"Ownership mismatch: task saat ini dimiliki {current_owner.value}."
+
+            current_status = TaskStatus(raw["status"])
+            if current_status in {TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                return False, (
+                    "Task terminal tidak boleh di-handoff atau dibuka kembali: "
+                    f"status={current_status.value}."
+                )
 
             cursor = await conn.execute(
                 "SELECT from_role, to_role FROM task_handoffs WHERE task_id=?",
