@@ -3,6 +3,7 @@
 import asyncio
 import re
 from collections import defaultdict
+from typing import Any
 
 from src.adapters.base import BaseChannelAdapter
 from src.agents.advisor import advisor_agent
@@ -11,13 +12,22 @@ from src.agents.marketing import marketing_agent
 from src.approval.gateway import approval_gateway
 from src.core.config import settings
 from src.core.normalizer import MessageNormalizer
-from src.core.types import AddressingType, MessageIntent, NormalizedMessage, RoleID, TaskStatus
+from src.core.types import (
+    AddressingType,
+    MessageIntent,
+    NormalizedMessage,
+    RiskLevel,
+    RoleID,
+    TaskStatus,
+    WorkloadType,
+)
 from src.llm.usage_meter import usage_meter
 from src.memory.judge import memory_judge
+from src.persona.profiles import activity_text
 from src.routing.addressing import addressing_detector
 from src.routing.fast_path import message_map_key
 from src.routing.role_router import role_router
-from src.routing.social import social_response
+from src.routing.social import is_fast_social, social_response
 from src.routing.task_analysis import task_analyzer
 from src.safety.conflict_detector import conflict_detector
 from src.safety.loop_guard import loop_guard
@@ -63,6 +73,23 @@ class SystemOrchestrator:
         )
         await self._map_sent_message(message, sent_id, role)
         return sent_id
+
+    async def _execute_agent(
+        self,
+        message: NormalizedMessage,
+        role: RoleID,
+        **kwargs: Any,
+    ) -> str:
+        activity_id = await self.adapter.begin_activity(
+            group_id=message.group_id,
+            text=activity_text(role),
+            from_role=role,
+            reply_to_message_id=message.message_id,
+        )
+        try:
+            return await self._agents[role].execute(message, **kwargs)
+        finally:
+            await self.adapter.end_activity(message.group_id, activity_id, role)
 
     async def _handle_approval_command(self, message: NormalizedMessage) -> str | None:
         match = APPROVAL_RE.match(message.text.strip())
@@ -163,8 +190,9 @@ class SystemOrchestrator:
                         "coordinator": coordinator.value,
                     }
 
-                response = await self._agents[role].execute(
+                response = await self._execute_agent(
                     work_msg,
+                    role,
                     workload=analysis.workload,
                     risk_level=analysis.risk_level,
                     handoff_payload=handoff,
@@ -175,11 +203,7 @@ class SystemOrchestrator:
                 contributions.append((role, response))
 
             all_targets_completed = len(contributions) == len(unique_targets)
-            final_text = (
-                contributions[-1][1]
-                if contributions
-                else "Kolaborasi belum menghasilkan kontribusi."
-            )
+            final_text = contributions[-1][1] if contributions else "Kolaborasi belum menghasilkan kontribusi."
 
             if all_targets_completed and len(contributions) > 1:
                 if not await usage_meter.check_thread_budget(message.group_id, thread_id):
@@ -202,15 +226,15 @@ class SystemOrchestrator:
                                 "text": (
                                     f"Instruksi awal:\n{message.text}\n\n"
                                     f"Kontribusi tim:\n{context}\n\n"
-                                    "Sintesis hasil akhir, hilangkan duplikasi dan nyatakan "
-                                    "next action."
+                                    "Sintesis hasil akhir, hilangkan duplikasi dan nyatakan next action."
                                 ),
                                 "reply_to_message_id": last_sent,
                                 "event_claimed": True,
                             }
                         )
-                        final_text = await self._agents[coordinator].execute(
+                        final_text = await self._execute_agent(
                             synth_msg,
+                            coordinator,
                             workload=analysis.workload,
                             risk_level=analysis.risk_level,
                             handoff_payload={"mode": "final_synthesis", "task_id": task.id},
@@ -235,9 +259,8 @@ class SystemOrchestrator:
                 return final_text
 
             await task_service.update_task_status(task.id, TaskStatus.WAITING_USER)
-            notice = (
-                "Kolaborasi dijeda sebelum hasil akhir lengkap"
-                + (f": {stop_reason}." if stop_reason else ".")
+            notice = "Kolaborasi dijeda sebelum hasil akhir lengkap" + (
+                f": {stop_reason}." if stop_reason else "."
             )
             await self._send(message, coordinator, notice, last_sent)
             return notice
@@ -264,8 +287,22 @@ class SystemOrchestrator:
             if addressing.intent == MessageIntent.SOCIAL:
                 targets = addressing.target_agents or [RoleID.MANAGER]
                 responses = []
+                if is_fast_social(message.text):
+                    for role in targets:
+                        text = social_response(role, message.text)
+                        await self._send(message, role, text)
+                        responses.append(f"[{role.value}]: {text}")
+                    return "\n".join(responses)
+
+                thread_id = f"social_{message.group_id}_{message.message_id}"
                 for role in targets:
-                    text = social_response(role, message.text)
+                    text = await self._execute_agent(
+                        message,
+                        role,
+                        workload=WorkloadType.CASUAL,
+                        risk_level=RiskLevel.LOW,
+                        thread_id=thread_id,
+                    )
                     await self._send(message, role, text)
                     responses.append(f"[{role.value}]: {text}")
                 return "\n".join(responses)
@@ -299,7 +336,6 @@ class SystemOrchestrator:
 
             analysis = task_analyzer.analyze(message.text, primary_role, len(message.attachments))
             thread_id = f"thr_{message.group_id}_{message.message_id}"
-            # Jika routing normal membutuhkan >1 spesialis, gunakan diskusi bounded daripada handoff berantai yang mengaburkan ownership.
             if len(analysis.collaborators) > 1:
                 return await self._run_collective_work(
                     message,
@@ -316,8 +352,9 @@ class SystemOrchestrator:
                 await self._send(message, primary_role, notice)
                 return notice
 
-            response = await self._agents[primary_role].execute(
+            response = await self._execute_agent(
                 message,
+                primary_role,
                 workload=analysis.workload,
                 risk_level=analysis.risk_level,
                 thread_id=thread_id,
@@ -355,8 +392,9 @@ class SystemOrchestrator:
                         }
                     )
                     try:
-                        final_text = await self._agents[target].execute(
+                        final_text = await self._execute_agent(
                             delegated,
+                            target,
                             workload=analysis.workload,
                             risk_level=analysis.risk_level,
                             handoff_payload={
@@ -376,13 +414,10 @@ class SystemOrchestrator:
                     await task_service.update_task_status(task.id, TaskStatus.BLOCKED)
                     final_text = response + f"\n\nHandoff tidak dijalankan: {reason}"
 
-            if (
-                addressing.intent != MessageIntent.SOCIAL
-                and await usage_meter.check_thread_budget(
-                    message.group_id,
-                    thread_id,
-                    limit=settings.budget_normal_task,
-                )
+            if await usage_meter.check_thread_budget(
+                message.group_id,
+                thread_id,
+                limit=settings.budget_normal_task,
             ):
                 await memory_judge.evaluate_and_commit(
                     actor_id=message.sender_id,
