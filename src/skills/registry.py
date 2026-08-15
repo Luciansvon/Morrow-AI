@@ -3,8 +3,7 @@
 from pathlib import Path
 
 from src.core.types import RoleID
-from src.skills.loader import skill_loader, SkillDefinition
-
+from src.skills.loader import SkillDefinition, skill_loader
 
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills"
 
