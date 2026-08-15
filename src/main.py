@@ -1,6 +1,13 @@
 """Titik masuk utama aplikasi Morrow v0.2."""
 
 import asyncio
+import sys
+
+# Proteksi encoding untuk Windows Console
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 from src.adapters.cli import CLIAdapter
 from src.adapters.telegram import TelegramMultiBotAdapter

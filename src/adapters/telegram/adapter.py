@@ -59,6 +59,9 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                 dp.message.register(create_handler(role))
                 self._dispatchers[role] = dp
 
+                # Hapus webhook dan bersihkan koneksi lama sebelum polling
+                await bot.delete_webhook(drop_pending_updates=True)
+
                 # Jalankan polling per bot
                 task = asyncio.create_task(dp.start_polling(bot))
                 self._polling_tasks.append(task)
