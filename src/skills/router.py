@@ -1,5 +1,7 @@
 """Pilih skill relevan setelah role owner sudah ditentukan."""
 
+from typing import ClassVar
+
 from src.core.types import NormalizedMessage, RoleID
 from src.skills.loader import SkillDefinition
 from src.skills.registry import skill_registry
@@ -7,7 +9,7 @@ from src.skills.registry import skill_registry
 
 class SkillRouter:
     MAX_MATCHED_SKILLS = 3
-    PRIMARY_BY_ROLE = {
+    PRIMARY_BY_ROLE: ClassVar[dict[RoleID, str]] = {
         RoleID.MANAGER: "task_coordination",
         RoleID.MARKETING: "campaign_strategy",
         RoleID.ADVISOR: "risk_decision_analysis",
