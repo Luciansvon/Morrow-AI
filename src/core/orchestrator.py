@@ -80,16 +80,28 @@ class SystemOrchestrator:
         role: RoleID,
         **kwargs: Any,
     ) -> str:
-        activity_id = await self.adapter.begin_activity(
-            group_id=message.group_id,
-            text=activity_text(role),
-            from_role=role,
-            reply_to_message_id=message.message_id,
-        )
+        activity_id: str | None = None
+        begin_activity = getattr(self.adapter, "begin_activity", None)
+        if callable(begin_activity):
+            try:
+                activity_id = await begin_activity(
+                    group_id=message.group_id,
+                    text=activity_text(role),
+                    from_role=role,
+                    reply_to_message_id=message.message_id,
+                )
+            except Exception:
+                activity_id = None
+
         try:
             return await self._agents[role].execute(message, **kwargs)
         finally:
-            await self.adapter.end_activity(message.group_id, activity_id, role)
+            end_activity = getattr(self.adapter, "end_activity", None)
+            if callable(end_activity):
+                try:
+                    await end_activity(message.group_id, activity_id, role)
+                except Exception:
+                    pass
 
     async def _handle_approval_command(self, message: NormalizedMessage) -> str | None:
         match = APPROVAL_RE.match(message.text.strip())
