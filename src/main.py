@@ -20,7 +20,10 @@ async def main() -> None:
     print("=" * 60)
     print("  🚀 Morrow v0.2.1")
     print("=" * 60)
+
+    settings.validate_openrouter_key()
     settings.ensure_directories()
+
     # Config may be loaded before tests/runtime mutate SQLITE_DB_PATH.
     if db._connection is None and db.db_path != settings.db_path:
         db.db_path = settings.db_path
@@ -49,14 +52,16 @@ async def main() -> None:
                     break
                 if user_input.lower() in {"keluar", "exit", "quit"}:
                     break
-                await orchestrator.handle_incoming_message(NormalizedMessage(
-                    message_id=f"msg_{asyncio.get_running_loop().time()}",
-                    group_id="__cli__",
-                    sender_id="__cli_user__",
-                    sender_name="User",
-                    text=user_input,
-                    platform="cli",
-                ))
+                await orchestrator.handle_incoming_message(
+                    NormalizedMessage(
+                        message_id=f"msg_{asyncio.get_running_loop().time()}",
+                        group_id="__cli__",
+                        sender_id="__cli_user__",
+                        sender_name="User",
+                        text=user_input,
+                        platform="cli",
+                    )
+                )
         else:
             while adapter._running:
                 await asyncio.sleep(1)

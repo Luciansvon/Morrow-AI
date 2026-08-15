@@ -1,7 +1,8 @@
-"""Fixtures global untuk pengujian unit & integrasi Morrow v0.2."""
+"""Global test fixtures. Test IDs dan mock secrets hanya hidup di test suite."""
 
 import pytest
 import pytest_asyncio
+from pydantic import SecretStr
 
 from src.adapters.cli import CLIAdapter
 from src.core.config import settings
@@ -11,21 +12,33 @@ from src.storage.sqlite import db
 
 @pytest_asyncio.fixture(autouse=True)
 async def init_test_db(tmp_path):
-    """Menyiapkan database SQLite terisolasi untuk setiap pengujian."""
-    test_db_path = str(tmp_path / "test_morrow.db")
-    settings.sqlite_db_path = test_db_path
+    old_db = settings.sqlite_db_path
+    old_storage = settings.storage_dir
+    old_users = settings.telegram_whitelist_user_ids_raw
+    old_groups = settings.telegram_allowed_group_ids_raw
+    old_openrouter_key = settings.openrouter_api_key
+
+    settings.sqlite_db_path = str(tmp_path / "test_morrow.db")
     settings.storage_dir = str(tmp_path / "storage")
+    settings.telegram_whitelist_user_ids_raw = "user_bima_01,user_bima,user_01,u1"
+    settings.telegram_allowed_group_ids_raw = "group_core_team_01,group_01,-100123456,grp1,g1"
+    settings.openrouter_api_key = SecretStr("sk-mock-key-for-testing")
     settings.ensure_directories()
 
-    # Buat instance database baru untuk test
-    db.db_path = test_db_path
-    db._connection = None
+    db.db_path = settings.db_path
+    if db._connection:
+        await db.close()
     await db.init_schema()
 
     yield db
 
     await db.close()
-    db._connection = None
+    settings.sqlite_db_path = old_db
+    settings.storage_dir = old_storage
+    settings.telegram_whitelist_user_ids_raw = old_users
+    settings.telegram_allowed_group_ids_raw = old_groups
+    settings.openrouter_api_key = old_openrouter_key
+    db.db_path = settings.db_path
 
 
 @pytest.fixture

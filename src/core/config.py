@@ -14,7 +14,7 @@ class BotTokenConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    openrouter_api_key: SecretStr = Field(default=SecretStr("sk-mock-key-for-testing"), alias="OPENROUTER_API_KEY")
+    openrouter_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
 
     telegram_manager_bot_token: SecretStr | None = Field(default=None, alias="TELEGRAM_MANAGER_BOT_TOKEN")
@@ -82,6 +82,13 @@ class Settings(BaseSettings):
             for cfg in self.telegram_bots.values()
             if cfg.token and cfg.token.get_secret_value().strip()
         )
+
+    def validate_openrouter_key(self, *, allow_mock: bool = False) -> None:
+        value = self.openrouter_api_key.get_secret_value().strip()
+        if not value:
+            raise ValueError("OPENROUTER_API_KEY wajib diisi sebelum Morrow dijalankan.")
+        if value.startswith("sk-mock") and not allow_mock:
+            raise ValueError("OPENROUTER_API_KEY masih menggunakan mock/testing key.")
 
     def validate_telegram_tokens(self) -> None:
         missing_roles = []
