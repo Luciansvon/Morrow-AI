@@ -34,6 +34,25 @@ class BaseChannelAdapter(ABC):
     ) -> str:
         """Mengirim pesan ke grup. Mengembalikan message_id platform yang dihasilkan."""
 
+    async def begin_activity(
+        self,
+        group_id: str,
+        text: str,
+        from_role: RoleID,
+        reply_to_message_id: str | None = None,
+    ) -> str | None:
+        """Tampilkan status kerja sementara bila channel mendukungnya."""
+        return None
+
+    async def end_activity(
+        self,
+        group_id: str,
+        activity_id: str | None,
+        from_role: RoleID,
+    ) -> None:
+        """Bersihkan status kerja sementara. Default no-op untuk adapter tanpa UI status."""
+        return None
+
     @abstractmethod
     async def send_approval_prompt(
         self,
