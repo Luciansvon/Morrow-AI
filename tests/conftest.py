@@ -15,6 +15,7 @@ from src.tools.registry import tool_registry
 async def init_test_db(tmp_path):
     old_db = settings.sqlite_db_path
     old_storage = settings.storage_dir
+    old_vault = settings.memory_vault_dir
     old_users = settings.telegram_whitelist_user_ids_raw
     old_groups = settings.telegram_allowed_group_ids_raw
     old_openrouter_key = settings.openrouter_api_key
@@ -22,6 +23,7 @@ async def init_test_db(tmp_path):
 
     settings.sqlite_db_path = str(tmp_path / "test_morrow.db")
     settings.storage_dir = str(tmp_path / "storage")
+    settings.memory_vault_dir = str(tmp_path / "memory")
     settings.telegram_whitelist_user_ids_raw = "user_bima_01,user_bima,user_01,u1"
     settings.telegram_allowed_group_ids_raw = "group_core_team_01,group_01,-100123456,grp1,g1"
     settings.openrouter_api_key = SecretStr("sk-mock-key-for-testing")
@@ -38,6 +40,7 @@ async def init_test_db(tmp_path):
     await db.close()
     settings.sqlite_db_path = old_db
     settings.storage_dir = old_storage
+    settings.memory_vault_dir = old_vault
     settings.telegram_whitelist_user_ids_raw = old_users
     settings.telegram_allowed_group_ids_raw = old_groups
     settings.openrouter_api_key = old_openrouter_key

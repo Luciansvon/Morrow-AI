@@ -30,6 +30,30 @@ class Settings(BaseSettings):
     database_path: str = Field(default="data/morrow.db", alias="DATABASE_PATH")
     sqlite_db_path: str = Field(default="", alias="SQLITE_DB_PATH")
     storage_dir: str = Field(default="data/storage", alias="STORAGE_DIR")
+    memory_vault_dir: str = Field(default="data/memory", alias="MEMORY_VAULT_DIR")
+    memory_embedding_model: str = Field(
+        default="openai/text-embedding-3-small",
+        alias="MEMORY_EMBEDDING_MODEL",
+    )
+    memory_embedding_dimensions: int = Field(
+        default=384,
+        gt=0,
+        le=4096,
+        alias="MEMORY_EMBEDDING_DIMENSIONS",
+    )
+    memory_embedding_max_chars: int = Field(
+        default=4000,
+        gt=0,
+        alias="MEMORY_EMBEDDING_MAX_CHARS",
+    )
+    memory_hybrid_top_k: int = Field(default=8, gt=0, le=50, alias="MEMORY_HYBRID_TOP_K")
+    memory_semantic_enabled: bool = Field(default=True, alias="MEMORY_SEMANTIC_ENABLED")
+    memory_semantic_backfill_limit: int = Field(
+        default=200,
+        ge=0,
+        le=5000,
+        alias="MEMORY_SEMANTIC_BACKFILL_LIMIT",
+    )
     max_attachment_size_mb: int = Field(default=20, gt=0, alias="MAX_ATTACHMENT_SIZE_MB")
     max_attachment_context_chars: int = Field(default=12_000, gt=0, alias="MAX_ATTACHMENT_CONTEXT_CHARS")
     max_total_attachment_context_chars: int = Field(default=24_000, gt=0, alias="MAX_TOTAL_ATTACHMENT_CONTEXT_CHARS")
@@ -132,6 +156,7 @@ class Settings(BaseSettings):
         if self.db_path != ":memory:":
             db_p.parent.mkdir(parents=True, exist_ok=True)
         Path(self.storage_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.memory_vault_dir).mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

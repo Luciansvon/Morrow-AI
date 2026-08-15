@@ -1,9 +1,12 @@
-"""Memori terstruktur per grup, per peran, dan audit history."""
+"""Durable structured memory with fail-soft derived retrieval indexes."""
 
 import uuid
 from typing import Any
 
 from src.core.types import MemoryItem, MemoryScope, MemoryType, RoleID
+from src.memory.retriever import hybrid_memory_retriever
+from src.memory.vault import memory_vault
+from src.memory.vector_index import memory_vector_index
 from src.storage.sqlite import db
 
 
@@ -72,7 +75,7 @@ class MemoryService:
                 ),
             )
 
-        return MemoryItem(
+        item = MemoryItem(
             id=mem_id,
             group_id=group_id,
             scope=scope,
@@ -81,6 +84,17 @@ class MemoryService:
             value=value,
             memory_type=memory_type,
         )
+
+        # Derived indexes must never make the source-of-truth write fail.
+        try:
+            await memory_vault.sync_scope(group_id, scope, role_id)
+        except Exception:
+            pass
+        try:
+            await memory_vector_index.index_memory(item)
+        except Exception:
+            pass
+        return item
 
     @staticmethod
     async def get_active_shared_memory(group_id: str = "__global__") -> dict[str, str]:
@@ -107,6 +121,29 @@ class MemoryService:
             "SELECT * FROM memory_audit WHERE group_id=? AND key=? ORDER BY timestamp ASC",
             (group_id, key),
         )
+
+    @staticmethod
+    async def retrieve_relevant_memory(
+        query: str,
+        role: RoleID,
+        group_id: str = "__global__",
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return await hybrid_memory_retriever.retrieve(query, group_id, role, limit)
+
+    @staticmethod
+    async def initialize_long_term_memory() -> dict[str, int]:
+        mirrored = 0
+        indexed = 0
+        try:
+            mirrored = await memory_vault.sync_all()
+        except Exception:
+            pass
+        try:
+            indexed = await memory_vector_index.backfill()
+        except Exception:
+            pass
+        return {"markdown_scopes": mirrored, "semantic_memories": indexed}
 
 
 memory_service = MemoryService()

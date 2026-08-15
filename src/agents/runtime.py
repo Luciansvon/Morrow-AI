@@ -22,13 +22,19 @@ BACKEND_GUARDRAILS = """
 
 class AgentRuntime:
     @staticmethod
-    def _format_bounded_memory(items: dict[str, str], limit: int) -> str:
+    def _format_relevant_memory(items: list[dict[str, Any]], limit: int) -> str:
         if not items:
-            return "(Tidak ada)"
+            return "(Tidak ada memori relevan)"
         lines: list[str] = []
         remaining = max(0, limit)
-        for key, value in items.items():
-            line = f"- {key}: {value}"
+        for item in items:
+            scope = item.get("scope", "shared")
+            role = item.get("role_id")
+            scope_label = f"role:{role}" if scope == "role" and role else scope
+            line = (
+                f"- [{scope_label}/{item.get('memory_type', 'fact')}] "
+                f"{item.get('key', '')}: {item.get('value', '')}"
+            )
             if len(line) > remaining:
                 if remaining > 0:
                     lines.append(line[:remaining] + "…")
@@ -37,7 +43,7 @@ class AgentRuntime:
             remaining -= len(line) + 1
             if remaining <= 0:
                 break
-        return "\n".join(lines) or "(Tidak ada)"
+        return "\n".join(lines) or "(Tidak ada memori relevan)"
 
     def __init__(self, role: RoleID, base_prompt: str):
         self.role = role
@@ -51,17 +57,27 @@ class AgentRuntime:
         risk_level: RiskLevel = RiskLevel.LOW,
     ) -> list[dict[str, Any]]:
         skills = skill_router.resolve_skills_for_task(self.role, message)
-        skills_text = "\n\n".join(f"### Skill: {s.name}\n{s.instructions}" for s in skills) or "(Tidak ada skill tambahan)"
+        skills_text = "\n\n".join(
+            f"### Skill: {skill.name}\n{skill.instructions}" for skill in skills
+        ) or "(Tidak ada skill tambahan)"
 
-        role_mem = await memory_service.get_role_memory(self.role, message.group_id)
-        shared_mem = await memory_service.get_active_shared_memory(message.group_id)
-        memory_half = max(1, settings.max_memory_context_chars // 2)
-        role_mem_str = self._format_bounded_memory(role_mem, memory_half)
-        shared_mem_str = self._format_bounded_memory(shared_mem, memory_half)
+        relevant_memory = await memory_service.retrieve_relevant_memory(
+            message.text,
+            self.role,
+            message.group_id,
+        )
+        memory_str = self._format_relevant_memory(
+            relevant_memory,
+            settings.max_memory_context_chars,
+        )
 
         active_tasks = await task_service.list_active_tasks(message.group_id)
-        my_tasks = [t for t in active_tasks if t.current_owner == self.role][: settings.max_active_tasks_context]
-        tasks_str = "\n".join(f"- [{t.id}] {t.title} ({t.status.value})" for t in my_tasks) or "(Tidak ada tugas aktif)"
+        my_tasks = [
+            task for task in active_tasks if task.current_owner == self.role
+        ][: settings.max_active_tasks_context]
+        tasks_str = "\n".join(
+            f"- [{task.id}] {task.title} ({task.status.value})" for task in my_tasks
+        ) or "(Tidak ada tugas aktif)"
 
         system_content = f"""{self.base_prompt}
 {BACKEND_GUARDRAILS}
@@ -74,11 +90,8 @@ class AgentRuntime:
 ## KEAHLIAN YANG TERSEDIA (SKILLS):
 {skills_text}
 
-## MEMORI INTERNAL PERAN ({self.role.value.upper()}):
-{role_mem_str}
-
-## MEMORI BERSAMA AKTIF (SHARED CONTEXT):
-{shared_mem_str}
+## MEMORI JANGKA PANJANG RELEVAN:
+{memory_str}
 
 ## TUGAS AKTIF SAYA:
 {tasks_str}
@@ -91,7 +104,9 @@ class AgentRuntime:
         for att in message.attachments:
             if total_remaining <= 0:
                 break
-            block = [f"\n<UNTRUSTED_ATTACHMENT name={att.original_name!r} mime={att.detected_mime!r}>"]
+            block = [
+                f"\n<UNTRUSTED_ATTACHMENT name={att.original_name!r} mime={att.detected_mime!r}>"
+            ]
             if att.error_message:
                 block.append(f"Status: {att.error_message}")
             if att.extracted_text:
@@ -119,11 +134,12 @@ class AgentRuntime:
         thread_id: str | None = None,
     ) -> str:
         context = await self.assemble_context(message, handoff_payload, workload, risk_level)
-        # Attachments are normalized into text/visual descriptions by the pre-routing pipeline.
-        # The agent itself receives text context, so do not pay for a multimodal model twice.
         modality = ModalityType.TEXT
         model_id, reasoning_effort = model_policy.resolve(
-            role=self.role, workload=workload, risk_level=risk_level, modality=modality,
+            role=self.role,
+            workload=workload,
+            risk_level=risk_level,
+            modality=modality,
         )
         response = await openrouter_client.chat_completion(
             messages=context,
