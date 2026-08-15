@@ -1,6 +1,7 @@
 """Pendeteksi konflik instruksi pengguna (Human Instruction Conflict Detector)."""
 
 import re
+from typing import ClassVar
 
 from src.core.types import TaskModel, TaskStatus
 
@@ -8,8 +9,14 @@ from src.core.types import TaskModel, TaskStatus
 class ConflictDetector:
     """Mendeteksi pertentangan instruksi antar pengguna / tugas aktif (CAP-SAFETY)."""
 
-    CONFLICT_KEYWORDS = ("batalkan", "jangan jadi", "batal", "ubah total", "tunda semua")
-    GENERIC_TITLE_TOKENS = {
+    CONFLICT_KEYWORDS: ClassVar[tuple[str, ...]] = (
+        "batalkan",
+        "jangan jadi",
+        "batal",
+        "ubah total",
+        "tunda semua",
+    )
+    GENERIC_TITLE_TOKENS: ClassVar[set[str]] = {
         "buat", "bikin", "luncurkan", "kerjakan", "task", "tugas", "rencana",
         "proyek", "project", "untuk", "yang", "dan", "dengan", "sekarang",
     }
