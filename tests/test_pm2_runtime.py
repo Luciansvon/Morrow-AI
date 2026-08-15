@@ -13,3 +13,9 @@ def test_pm2_points_to_root_runtime_wrapper():
     config = Path("ecosystem.config.cjs").read_text(encoding="utf-8")
     assert 'script: "morrow_runtime.py"' in config
     assert 'script: "src/main.py"' not in config
+
+
+def test_pm2_has_windows_python_alias_fallback():
+    config = Path("ecosystem.config.cjs").read_text(encoding="utf-8")
+    assert 'interpreter: usesWindowsCommandAlias ? "cmd.exe" : python' in config
+    assert '"/d", "/c", python' in config

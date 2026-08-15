@@ -41,9 +41,41 @@ def _find_pm2() -> str:
 
 def _pm2_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["MORROW_PYTHON"] = sys.executable
+    env["MORROW_PYTHON"] = _resolve_python_interpreter()
     env["PYTHONUNBUFFERED"] = "1"
     return env
+
+
+def _resolve_python_interpreter() -> str:
+    """Return an interpreter PM2 can spawn in the active Python environment."""
+    executable = Path(sys.executable)
+    candidates = (executable,)
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return str(candidate)
+        except OSError:
+            continue
+
+    # Microsoft Store Python exposes a zero-byte app-execution alias. Windows
+    # can launch the command name, but PM2 cannot spawn the alias by absolute path.
+    if os.name == "nt":
+        if shutil.which("python.exe"):
+            return "python.exe"
+        if shutil.which("python"):
+            return "python"
+
+    candidates = (
+        Path(sys.prefix) / "python.exe",
+        Path(sys.base_prefix) / "python.exe",
+    )
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return str(candidate)
+        except OSError:
+            continue
+    return sys.executable
 
 
 def _run_pm2(
@@ -81,8 +113,12 @@ def _start(pm2: str, env: dict[str, str]) -> None:
         _run_pm2(pm2, ["restart", APP_NAME, "--update-env"], env=env)
     else:
         _run_pm2(pm2, ["start", str(ECOSYSTEM_CONFIG), "--only", APP_NAME], env=env)
+    if not _is_managed(pm2, env):
+        raise RuntimeError(
+            "PM2 tidak berhasil mendaftarkan process morrow. Cek detailnya dengan `pm2 logs morrow`."
+        )
     _run_pm2(pm2, ["save"], env=env)
-    print("\n✅ Morrow aktif di PM2. Terminal boleh ditutup.")
+    print("\nMorrow aktif di PM2. Terminal boleh ditutup.")
     print("   Cek status: MORROW status")
     print("   Lihat log : MORROW logs")
 
@@ -152,8 +188,8 @@ def run_cli(argv: list[str] | None = None) -> int:
         elif command == "startup":
             _install_startup(pm2, env)
         return 0
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+    except (FileNotFoundError, RuntimeError, subprocess.CalledProcessError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 130

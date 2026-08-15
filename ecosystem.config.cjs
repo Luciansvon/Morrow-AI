@@ -1,12 +1,15 @@
+const isWindows = process.platform === "win32";
+const python = process.env.MORROW_PYTHON || (isWindows ? "python.exe" : "python3");
+const usesWindowsCommandAlias = isWindows && !python.includes("/") && !python.includes("\\");
+
 module.exports = {
   apps: [
     {
       name: "morrow",
       cwd: __dirname,
       script: "morrow_runtime.py",
-      interpreter:
-        process.env.MORROW_PYTHON ||
-        (process.platform === "win32" ? "python" : "python3"),
+      interpreter: usesWindowsCommandAlias ? "cmd.exe" : python,
+      interpreter_args: usesWindowsCommandAlias ? ["/d", "/c", python] : [],
       exec_mode: "fork",
       instances: 1,
       autorestart: true,
