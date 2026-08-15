@@ -58,6 +58,31 @@ class RiskLevel(str, Enum):
     EXTREME = "extreme"
 
 
+class AddressingType(str, Enum):
+    NONE = "none"                       # Bukan sapaan agen (misal: "hitung semua harga ini")
+    SINGLE_AGENT = "single_agent"       # 1 agen spesifik (misal: "Manager, cek task ini")
+    MULTIPLE_AGENTS = "multiple_agents" # Subset agen (misal: "Manager dan Marketing, halo")
+    ALL_AGENTS = "all_agents"           # Seluruh tim (misal: "halo semua", "hai tim")
+
+
+class MessageIntent(str, Enum):
+    SOCIAL = "social"                   # Sapaan, basa-basi, cek kehadiran
+    WORK_REQUEST = "work_request"       # Permintaan tugas kerja / strategi
+    QUESTION = "question"               # Pertanyaan seputar status / informasi
+    COMMAND = "command"                 # Perintah tindakan eksternal
+    OTHER = "other"
+
+
+class AddressingResult(BaseModel):
+    addressing_type: AddressingType
+    target_agents: list[RoleID] = Field(default_factory=list)
+    intent: MessageIntent = MessageIntent.WORK_REQUEST
+    allow_multi_response: bool = False
+    requires_coordinator: bool = False
+    coordinator: RoleID | None = None
+    confidence: float = 1.0
+
+
 class ModalityType(str, Enum):
     TEXT = "text"
     MULTIMODAL = "multimodal"

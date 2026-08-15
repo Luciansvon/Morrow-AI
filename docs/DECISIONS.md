@@ -223,6 +223,30 @@ Kebutuhan interaksi pengguna grup menghendaki pengalaman percakapan tim AI nyata
 #### 3. Dampak
 Sistem multi-bot Telegram beroperasi mulus, elegan, dan seluruh 32 skenario pengujian unit/integrasi lulus 100%.
 
+---
+
+### [ADR-012] Sistem Collective & Multi-Agent Addressing dan Intent Detection
+
+* **Tanggal:** 2026-08-15
+* **Status Keputusan:** Accepted
+* **Rujukan PRD:** `INV-002`, `CAP-ROUTING`, `CAP-CHAT`, `AC-002..004`
+
+#### 1. Konteks
+Pengguna memerlukan kemampuan untuk menyapa atau menugaskan beberapa/seluruh agen secara alami (*"halo semua"*, *"pagi tim"*, *"Manager dan Marketing, halo"*), namun kata *"semua"* tidak boleh dianggap broadcast jika berkonteks sebagai penunjuk jumlah objek (*"hitung semua harga ini"*, *"cek semua produk"*).
+
+#### 2. Keputusan Arsitektur
+1. **Pemisahan Modul:** Dibangun modul `src/routing/addressing.py` dan `src/routing/intent.py` terpisah dari adapter Telegram.
+2. **Addressing Types:** Mendukung `none`, `single_agent`, `multiple_agents`, dan `all_agents`.
+3. **3 Mode Perilaku:**
+   - **Mode A (Social Broadcast):** Sapaan sosial dibalas 1x pendek oleh seluruh bot yang disapa tanpa membuat task atau memori jangka panjang.
+   - **Mode B (Multi-Agent Work Request):** Permintaan kerja kolaboratif dikoordinasikan oleh Manager sebagai *Discussion Coordinator* di bawah `LoopGuard`.
+   - **Mode C (Object Quantifier / Normal Task):** Diteruskan ke 1 agen utama via `RoleRouter`.
+4. **Penyesuaian Kontrak PRD `INV-002`:** Pengecualian multi-response resmi diakomodasi khusus untuk *Social Broadcast*.
+
+#### 3. Dampak
+Pengalaman percakapan terasa hidup dan alami tanpa perang saudara antar-bot atau kebocoran memori. Seluruh 48 skenario pengujian unit dan integrasi lulus 100%.
+
+
 
 
 

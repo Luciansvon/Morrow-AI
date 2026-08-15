@@ -4,6 +4,29 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 
 ---
 
+### [WL-010] Implementasi Collective & Multi-Agent Addressing System dan Pembuatan README.md
+* **Tanggal:** 2026-08-15
+* **Tipe Pekerjaan:** Implementasi Fitur Routing Cerdas, Pembuatan Dokumentasi Utama & Git Sync
+* **Status:** Completed
+* **Tujuan:** Menambahkan kemampuan pengalamatan multi-agen (*Collective Addressing*) dengan membedakan sapaan kolektif tim vs penunjuk jumlah objek, serta menyusun `README.md` utama repositori.
+* **Scope Pekerjaan:**
+  - Membangun `src/routing/addressing.py` dan `src/routing/intent.py`.
+  - Menambahkan enum `AddressingType` (`none`, `single_agent`, `multiple_agents`, `all_agents`) dan `MessageIntent` pada `src/core/types.py`.
+  - Menghubungkan *Addressing & Intent Detector* ke dalam `src/core/orchestrator.py` untuk mengeksekusi 3 mode perilaku:
+    - **Mode A (Social Broadcast):** Multi-response sapaan santun tanpa task/memory leaks.
+    - **Mode B (Multi-Agent Work Request):** Kolaborasi terkoordinasi oleh Manager di bawah `LoopGuard`.
+    - **Mode C (Object Quantifier / Normal Task):** Single primary owner routing.
+  - Membangun suite pengujian komprehensif di `tests/test_addressing.py` (16 skenario uji).
+  - Memvalidasi seluruh **48 skenario pengujian unit & integrasi** dengan `pytest` (100% passed).
+  - Menyusun berkas `README.md` lengkap dan terstruktur untuk repositori GitHub.
+  - Mencatat keputusan arsitektur resmi **[ADR-012]** di [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+* **Keputusan Penting:**
+  - Kata *"semua"* tidak otomatis menjadi broadcast jika konteksnya adalah penunjuk jumlah objek.
+* **Next Action:**
+  - Commit dan push ke branch `main` repositori GitHub.
+
+---
+
 ### [WL-009] Implementasi Arsitektur 3 Bot Telegram Terpisah pada 1 Backend Morrow
 * **Tanggal:** 2026-08-15
 * **Tipe Pekerjaan:** Revisi Arsitektur Adapter Multi-Bot & Sinkronisasi Git
