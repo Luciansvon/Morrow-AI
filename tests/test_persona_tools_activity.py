@@ -153,6 +153,6 @@ async def test_rich_social_banter_uses_persona_runtime(monkeypatch):
             text="Manager, wkwkwk lu kocak",
         )
     )
-    assert result == "lah lu yang mulai wkwk"
+    assert result == "[manager]: lah lu yang mulai wkwk"
     assert seen["workload"] == WorkloadType.CASUAL
     assert seen["risk_level"] == RiskLevel.LOW
