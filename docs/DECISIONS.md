@@ -201,5 +201,28 @@ Audit sistem mendeteksi potensi cacat semantik: (1) attachment diproses setelah 
 #### 3. Dampak
 Sistem mencapai tingkat kesiapan implementasi tinggi (Readiness 9/10+), bebas dari *god-object*, dan mematuhi seluruh batasan PRD v0.2.
 
+---
+
+### [ADR-011] Arsitektur 3 Bot Telegram Terpisah pada Satu Backend Morrow Terpadu
+
+* **Tanggal:** 2026-08-15
+* **Status Keputusan:** Accepted
+* **Rujukan PRD:** `CAP-AGENTS`, `CAP-ROUTING`, `CAP-CHAT`, `INV-001`, `INV-002`, `AC-002..004`, `AC-021`
+
+#### 1. Konteks
+Kebutuhan interaksi pengguna grup menghendaki pengalaman percakapan tim AI nyata di mana masing-masing peran agen (Manager, Marketing, Advisor) memiliki identitas bot Telegram terpisah (`@ManagerBot`, `@MarketingBot`, `@AdvisorBot`), namun tetap dikendalikan oleh satu backend Morrow tunggal tanpa duplikasi database atau orchestrator terpisah.
+
+#### 2. Keputusan Arsitektur
+1. **Satu Backend Bersama:** Tetap menggunakan 1 backend Python, 1 SQLite WAL shared database, 1 orchestrator, 1 task system, 1 shared memory, dan 1 approval gateway.
+2. **3 Token Bot Terpisah:** Menggunakan `TELEGRAM_MANAGER_BOT_TOKEN`, `TELEGRAM_MARKETING_BOT_TOKEN`, `TELEGRAM_ADVISOR_BOT_TOKEN` yang dibungkus `SecretStr` tanpa kebocoran log.
+3. **Penyaringan Pesan Sendiri (*Self-Bot Echo Filter*):** `update_normalizer.py` memfilter ID bot sendiri untuk mencegah infinite loop ketika bot saling mendelegasikan tugas.
+4. **Deduplikasi Update Serentak:** Update yang diterima ketiga bot dari pesan pengguna yang sama di-deduplikasi via `(platform, group_id, platform_message_id)`.
+5. **Pengiriman Berbasis Peran (*Role-Based Dispatcher*):** Respon agen dikirim menggunakan bot yang mewakili `RoleID` pemilik tugas (misal respon Marketing selalu dikirim via Marketing Bot).
+6. **Pemetaan Balasan (*Reply Mapping*):** Tabel `message_agent_map` mencatat `(platform_message_id, originating_role_id, bot_identity, group_id)`.
+
+#### 3. Dampak
+Sistem multi-bot Telegram beroperasi mulus, elegan, dan seluruh 32 skenario pengujian unit/integrasi lulus 100%.
+
+
 
 

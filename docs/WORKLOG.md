@@ -4,6 +4,29 @@ Dokumen ini mencatat seluruh aktivitas kerja, perkembangan berkas, dan hasil pen
 
 ---
 
+### [WL-009] Implementasi Arsitektur 3 Bot Telegram Terpisah pada 1 Backend Morrow
+* **Tanggal:** 2026-08-15
+* **Tipe Pekerjaan:** Revisi Arsitektur Adapter Multi-Bot & Sinkronisasi Git
+* **Status:** Completed
+* **Tujuan:** Mengadopsi arsitektur 3 Bot Telegram independen (Manager, Marketing, Advisor) yang dikendalikan oleh satu backend Morrow terpadu dengan proteksi token dan deduplikasi update.
+* **Scope Pekerjaan:**
+  - Memperbarui `.env.example` dengan 3 variabel token (`TELEGRAM_MANAGER_BOT_TOKEN`, `TELEGRAM_MARKETING_BOT_TOKEN`, `TELEGRAM_ADVISOR_BOT_TOKEN`), `TELEGRAM_ALLOWED_GROUP_IDS`, dan `TELEGRAM_WHITELIST_USER_IDS`.
+  - Memperbarui `src/core/config.py` dengan konfigurasi terstruktur `BotTokenConfig`, validasi token tanpa membocorkan rahasia, dan proteksi `SecretStr`.
+  - Membangun paket `src/adapters/telegram/` (`bot_registry.py`, `update_normalizer.py`, `sender.py`, `adapter.py`).
+  - Menerapkan filter *self-bot echo* di `update_normalizer.py` untuk mencegah *infinite loop* saat bot saling mendelegasikan tugas di grup Telegram.
+  - Memperbarui tabel `message_agent_map` di `src/storage/schema.sql` dan `src/core/orchestrator.py` dengan atribut `bot_identity`.
+  - Membuat berkas `.gitignore` untuk melindungi berkas `.env`, database `*.db`, dan cache.
+  - Menulis suite pengujian komprehensif di `tests/test_telegram_multi_bot.py`.
+  - Memvalidasi seluruh 32 skenario pengujian dengan `pytest` (100% passed).
+  - Menginisialisasi git repository lokal dan mengatur remote ke `https://github.com/Luciansvon/Morrow-AI.git`.
+  - Mencatat keputusan arsitektur resmi **[ADR-011]** di [`docs/DECISIONS.md`](file:///c:/Users/shint/Downloads/AI-TEAM-MAS%20FENDI/docs/DECISIONS.md).
+* **Keputusan Penting:**
+  - Tetap 1 backend, 1 database SQLite, 1 orchestrator, dan 1 sistem memori bersama.
+* **Next Action:**
+  - Siap untuk integrasi token riil dan deployment.
+
+---
+
 ### [WL-008] Implementasi Penuh 6 Tahap & Verifikasi 22 Acceptance Contracts (AC-001 s.d. AC-022)
 * **Tanggal:** 2026-08-15
 * **Tipe Pekerjaan:** Implementasi Fitur & Verifikasi Pengujian Penuh (Full Implementation & Automated Test Verification)
