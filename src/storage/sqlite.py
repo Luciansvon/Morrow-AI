@@ -1,4 +1,4 @@
-"""SQLite async manager dengan WAL, migrasi ringan, transaksi, dan integrity check."""
+"""SQLite async manager dengan WAL, FTS5, sqlite-vec, migrasi, dan integrity check."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -18,16 +18,38 @@ class DatabaseManager:
         self.db_path = db_path or settings.db_path
         self._connection: aiosqlite.Connection | None = None
         self._connect_lock = asyncio.Lock()
-        # One shared SQLite connection means transaction boundaries must also guard
-        # ordinary execute/fetch calls. Otherwise another coroutine can accidentally
-        # commit inside an unrelated BEGIN IMMEDIATE block.
         self._transaction_lock = asyncio.Lock()
+        self._vector_extension_loaded = False
 
     @classmethod
     def get_instance(cls, db_path: str | None = None) -> "DatabaseManager":
         if cls._instance is None:
             cls._instance = cls(db_path)
         return cls._instance
+
+    @property
+    def vector_extension_loaded(self) -> bool:
+        return self._vector_extension_loaded
+
+    async def _try_load_vector_extension(self, conn: aiosqlite.Connection) -> None:
+        self._vector_extension_loaded = False
+        if not settings.memory_semantic_enabled:
+            return
+        try:
+            import sqlite_vec
+
+            await conn.enable_load_extension(True)
+            await conn.load_extension(sqlite_vec.loadable_path())
+            async with conn.execute("SELECT vec_version()") as cursor:
+                row = await cursor.fetchone()
+            self._vector_extension_loaded = bool(row)
+        except Exception:
+            self._vector_extension_loaded = False
+        finally:
+            try:
+                await conn.enable_load_extension(False)
+            except Exception:
+                pass
 
     async def connect(self) -> aiosqlite.Connection:
         if self._connection is not None:
@@ -43,6 +65,7 @@ class DatabaseManager:
                     await conn.execute("PRAGMA journal_mode = WAL;")
                     await conn.execute("PRAGMA synchronous = NORMAL;")
                     await conn.execute("PRAGMA busy_timeout = 5000;")
+                await self._try_load_vector_extension(conn)
                 self._connection = conn
         assert self._connection is not None
         return self._connection
@@ -102,9 +125,6 @@ class DatabaseManager:
                 if col not in cols:
                     await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
-        # Older schemas did not enforce one active memory per group/scope/key.
-        # Collapse legacy duplicates before schema.sql creates the unique indexes;
-        # keep the most recently updated row and retain audit history separately.
         if await self._table_exists("memories"):
             await conn.execute(
                 """DELETE FROM memories WHERE id IN (
@@ -122,6 +142,27 @@ class DatabaseManager:
             )
         await conn.commit()
 
+    async def _ensure_memory_vector_schema(self, conn: aiosqlite.Connection) -> None:
+        if not self._vector_extension_loaded or not settings.memory_semantic_enabled:
+            return
+        dimensions = settings.memory_embedding_dimensions
+        async with conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_vec'"
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row and f"float[{dimensions}]" not in str(row["sql"] or "").lower():
+            await conn.execute("DROP TABLE memory_vec")
+            await conn.execute("DELETE FROM memory_vector_map")
+        await conn.execute(
+            f"""CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
+                vector_id INTEGER PRIMARY KEY,
+                embedding FLOAT[{dimensions}] distance_metric=cosine,
+                group_id TEXT PARTITION KEY,
+                scope TEXT,
+                role_id TEXT
+            )"""
+        )
+
     async def init_schema(self, schema_path: str | None = None) -> None:
         conn = await self.connect()
         await self._migrate_legacy_schema()
@@ -129,6 +170,15 @@ class DatabaseManager:
             schema_path = str(Path(__file__).parent / "schema.sql")
         with open(schema_path, "r", encoding="utf-8") as f:
             await conn.executescript(f.read())
+
+        await conn.execute("DELETE FROM memory_fts")
+        await conn.execute(
+            """INSERT INTO memory_fts
+               (memory_id, group_id, scope, role_id, key, value, memory_type)
+               SELECT id, group_id, scope, role_id, key, value, memory_type FROM memories"""
+        )
+        await self._ensure_memory_vector_schema(conn)
+
         roles = [
             ("manager", "Manager", "Koordinasi tim, prioritas, dan manajemen tugas"),
             ("marketing", "Marketing", "Strategi kampanye, riset pasar, dan konten kreatif"),
@@ -181,10 +231,7 @@ class DatabaseManager:
         if self._connection:
             await self._connection.close()
             self._connection = None
-        # A DatabaseManager singleton can outlive an asyncio event loop during
-        # tests, embedded runtimes, or controlled restarts. asyncio.Lock binds
-        # lazily to the loop that first contends on it, so stale locks must not be
-        # carried into a new loop after the connection has been closed.
+        self._vector_extension_loaded = False
         self._connect_lock = asyncio.Lock()
         self._transaction_lock = asyncio.Lock()
 
