@@ -272,11 +272,18 @@ class SystemOrchestrator:
 
             active_tasks = await task_service.list_active_tasks(message.group_id)
             is_conflict, desc, affected = conflict_detector.detect_conflict(message.text, active_tasks)
-            if is_conflict and affected:
-                await task_service.update_task_status(affected.id, TaskStatus.WAITING_USER)
-                pause = f"Otomatisasi dijeda karena instruksi berpotensi konflik dengan task '{affected.title}'. {desc or ''} Mohon klarifikasi."
-                await self._send(message, affected.current_owner, pause)
-                return pause
+            if is_conflict:
+                if affected:
+                    await task_service.update_task_status(affected.id, TaskStatus.WAITING_USER)
+                    pause = f"Otomatisasi dijeda karena instruksi berpotensi konflik dengan task '{affected.title}'. {desc or ''} Mohon klarifikasi."
+                    await self._send(message, affected.current_owner, pause)
+                    return pause
+                clarification = desc or (
+                    "Instruksi berpotensi konflik dengan beberapa task aktif. "
+                    "Sebutkan task yang dimaksud sebelum otomatisasi dilanjutkan."
+                )
+                await self._send(message, RoleID.MANAGER, clarification)
+                return clarification
 
             if addressing.requires_coordinator and addressing.target_agents:
                 return await self._run_collective_work(
