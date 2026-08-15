@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - chatgpt/full-fix-20260815
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
