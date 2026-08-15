@@ -14,6 +14,7 @@ from src.adapters.telegram import TelegramMultiBotAdapter
 from src.core.config import settings
 from src.core.orchestrator import SystemOrchestrator
 from src.core.types import NormalizedMessage
+from src.memory.service import memory_service
 from src.storage.sqlite import db
 
 
@@ -25,13 +26,19 @@ async def main() -> None:
     settings.validate_openrouter_key()
     settings.ensure_directories()
 
-    # Config may be loaded before tests/runtime mutate SQLITE_DB_PATH.
     if db._connection is None and db.db_path != settings.db_path:
         db.db_path = settings.db_path
     await db.init_schema()
     if not await db.integrity_check():
         raise RuntimeError("SQLite quick_check gagal")
     print(f"✅ Database initialized: {settings.db_path}")
+
+    memory_state = await memory_service.initialize_long_term_memory()
+    vector_status = "aktif" if db.vector_extension_loaded else "fallback FTS5"
+    print(
+        "✅ Long-term memory initialized: "
+        f"{vector_status}, {memory_state['semantic_memories']} semantic index refreshed"
+    )
 
     token_count = settings.configured_telegram_token_count
     explicit_telegram = settings.channel_adapter.lower() == "telegram"
