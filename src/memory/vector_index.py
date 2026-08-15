@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import logging
 from typing import Any
 
 from src.core.config import settings
 from src.core.types import MemoryItem, RoleID
 from src.memory.embeddings import memory_embedding_provider
 from src.storage.sqlite import db
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryVectorIndex:
@@ -138,8 +141,9 @@ class MemoryVectorIndex:
                     embedding=embedding,
                 )
             except Exception:
-                continue
-            indexed += 1
+                logger.exception("Gagal backfill vector memory %s", row["id"])
+            else:
+                indexed += 1
         return indexed
 
     @staticmethod
