@@ -38,7 +38,7 @@ jobs:
       - name: Ruff verify
         run: ruff check .
       - name: Tests
-        run: pytest -q
+        run: timeout 60s pytest -vv -s
 
   package:
     name: Package verified source
