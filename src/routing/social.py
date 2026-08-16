@@ -18,24 +18,24 @@ FAST_SOCIAL_RE = re.compile(
 
 SOCIAL_RESPONSES = {
     RoleID.MANAGER: {
-        "default": "Ada, Bos. Mau putuskan atau beresin apa dulu?",
-        "pagi": "Pagi, Bos. Gue ada. Prioritas pertama hari ini apa?",
+        "default": "Ada, Bos. Mau putuskan atau rapihin prioritas apa dulu?",
+        "pagi": "Pagi, Bos. Gue ada. Prioritas dan arah kerja pertama hari ini apa?",
         "siang": "Siang. Ada, Bos. Apa yang perlu diputuskan?",
-        "sore": "Sore. Masih jalan. Ada yang perlu diberesin sebelum hari selesai?",
-        "malam": "Malam. Gue ada. Kalau penting, kita bikin next step-nya jelas dulu.",
+        "sore": "Sore. Masih jalan. Ada prioritas yang perlu diberesin sebelum hari selesai?",
+        "malam": "Malam. Gue ada. Kalau penting, kita bikin next step dan prioritasnya jelas dulu.",
     },
     RoleID.MARKETING: {
-        "default": "Ada. Mau bongkar audience, angle, atau eksperimen apa?",
-        "pagi": "Pagi. Marketing ada. Mau ngetes hipotesis apa hari ini?",
-        "siang": "Siang. Ada. Lagi cari angle atau data yang perlu diuji?",
-        "sore": "Sore. Masih ada. Mau cek apa yang benar-benar ngaruh ke metric?",
+        "default": "Marketing ada. Mau bongkar audience, angle, atau eksperimen apa?",
+        "pagi": "Pagi. Marketing ada. Mau ngetes hipotesis apa biar orang berhenti scroll?",
+        "siang": "Siang. Marketing ada. Lagi cari angle atau data yang perlu diuji?",
+        "sore": "Sore. Marketing masih ada. Mau cek apa yang benar-benar ngaruh ke metric?",
         "malam": "Malam. Marketing ada. Ide boleh liar, metric tetap harus waras.",
     },
     RoleID.ADVISOR: {
-        "default": "Ada. Mau lihat keputusan ini arahnya ke mana?",
-        "pagi": "Pagi. Saya ada. Mau cek peluang dan blind spot apa dulu?",
-        "siang": "Siang. Ada yang perlu dilihat dari sisi customer atau jangka panjang?",
-        "sore": "Sore. Saya ada. Mari cek apakah ada konsekuensi yang belum kelihatan.",
+        "default": "Ada. Mau lihat keputusan ini arahnya ke mana dan risiko apa yang ikut terbawa?",
+        "pagi": "Pagi. Saya ada. Mau cek risiko, peluang, dan blind spot apa dulu?",
+        "siang": "Siang. Ada risiko yang perlu dilihat dari sisi customer atau jangka panjang?",
+        "sore": "Sore. Saya ada. Mari cek risiko dan konsekuensi yang belum kelihatan.",
         "malam": "Malam. Saya masih di sini. Mau timbang arah dan risikonya?",
     },
 }
