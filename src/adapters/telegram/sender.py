@@ -38,6 +38,16 @@ class TelegramSender:
             except TypeError:
                 kwargs.pop("reply_parameters", None)
                 kwargs["reply_to_message_id"] = reply_num
+                try:
+                    return await bot.send_message(**kwargs)
+                except Exception as exc:
+                    if "message to be replied not found" in str(exc).lower():
+                        return await bot.send_message(chat_id=int(group_id), text=text)
+                    raise
+            except Exception as exc:
+                if "message to be replied not found" in str(exc).lower():
+                    return await bot.send_message(chat_id=int(group_id), text=text)
+                raise
         return await bot.send_message(**kwargs)
 
     @staticmethod

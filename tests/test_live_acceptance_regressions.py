@@ -247,3 +247,30 @@ async def test_evidence_contract_requires_traceable_sources_for_external_numbers
     system = context[0]["content"]
     assert "setiap angka eksternal yang disajikan sebagai fakta harus dapat ditelusuri" in system
     assert "Memori jangka panjang bukan bukti eksternal yang otomatis valid" in system
+
+
+@pytest.mark.asyncio
+async def test_telegram_sender_falls_back_when_reply_target_missing():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.adapters.telegram.sender import telegram_sender
+
+    fake_bot = MagicMock()
+    fake_sent = MagicMock(message_id=999)
+
+    async def mock_send_message(**kwargs):
+        if "reply_parameters" in kwargs or "reply_to_message_id" in kwargs:
+            raise RuntimeError("Telegram server says - Bad Request: message to be replied not found")
+        return fake_sent
+
+    fake_bot.send_message = AsyncMock(side_effect=mock_send_message)
+
+    res = await telegram_sender._send_one(
+        fake_bot,
+        group_id="-100123456789",
+        text="Test fallback",
+        reply_to="888",
+    )
+    assert res == fake_sent
+    assert fake_bot.send_message.call_count == 2
+
