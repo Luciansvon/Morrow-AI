@@ -1,33 +1,81 @@
 """Telegram sender. Never fabricates delivery success when a bot is unavailable."""
 
+import logging
+import re
 from typing import Any
 
 from src.adapters.telegram.bot_registry import bot_registry
 from src.core.types import RoleID
 
+logger = logging.getLogger(__name__)
+
 
 class TelegramSender:
     MAX_CHARS = 3900
+    EMPTY_RESPONSE_FALLBACK = (
+        "Saya belum berhasil menyusun respons yang bisa dikirim untuk pesan tadi. "
+        "Input sudah diterima, tetapi hasil pemrosesan kosong."
+    )
+    _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S")
 
-    @staticmethod
-    def _chunks(text: str) -> list[str]:
-        if len(text) <= TelegramSender.MAX_CHARS:
-            return [text]
+    @classmethod
+    def _prepare_text(cls, text: str | None) -> str:
+        """Keep plain-text output readable on narrow Telegram layouts and never empty."""
+        raw = str(text or "").strip()
+        if not raw:
+            logger.warning("telegram_empty_response_guard activated")
+            return cls.EMPTY_RESPONSE_FALLBACK
+
+        output: list[str] = []
+        in_code_block = False
+        previous_was_list_item = False
+        for raw_line in raw.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                output.append(line)
+                in_code_block = not in_code_block
+                previous_was_list_item = False
+                continue
+
+            is_list_item = bool(cls._LIST_ITEM_RE.match(line)) if not in_code_block else False
+            if is_list_item and previous_was_list_item and output and output[-1] != "":
+                output.append("")
+            output.append(line)
+            previous_was_list_item = is_list_item if stripped else False
+
+        return "\n".join(output).strip() or cls.EMPTY_RESPONSE_FALLBACK
+
+    @classmethod
+    def _chunks(cls, text: str) -> list[str]:
+        remaining = cls._prepare_text(text)
         chunks: list[str] = []
-        remaining = text
         while remaining:
-            cut = min(len(remaining), TelegramSender.MAX_CHARS)
-            if cut < len(remaining):
-                newline = remaining.rfind("\n", 0, cut)
-                if newline > cut // 2:
-                    cut = newline + 1
-            chunks.append(remaining[:cut])
-            remaining = remaining[cut:]
-        return chunks
+            if len(remaining) <= cls.MAX_CHARS:
+                chunks.append(remaining)
+                break
+
+            cut = cls.MAX_CHARS
+            paragraph = remaining.rfind("\n\n", 0, cut)
+            newline = remaining.rfind("\n", 0, cut)
+            space = remaining.rfind(" ", 0, cut)
+            if paragraph > cut // 3:
+                cut = paragraph + 2
+            elif newline > cut // 2:
+                cut = newline + 1
+            elif space > cut // 2:
+                cut = space + 1
+
+            chunk = remaining[:cut].rstrip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[cut:].lstrip("\n")
+        return chunks or [cls.EMPTY_RESPONSE_FALLBACK]
 
     @staticmethod
     async def _send_one(bot: Any, group_id: str, text: str, reply_to: str | None):
-        kwargs: dict[str, Any] = {"chat_id": int(group_id), "text": text}
+        safe_text = TelegramSender._prepare_text(text)
+        kwargs: dict[str, Any] = {"chat_id": int(group_id), "text": safe_text}
         reply_num = int(reply_to) if reply_to and reply_to.lstrip("-").isdigit() else None
         if reply_num is not None:
             try:
@@ -42,11 +90,11 @@ class TelegramSender:
                     return await bot.send_message(**kwargs)
                 except Exception as exc:
                     if "message to be replied not found" in str(exc).lower():
-                        return await bot.send_message(chat_id=int(group_id), text=text)
+                        return await bot.send_message(chat_id=int(group_id), text=safe_text)
                     raise
             except Exception as exc:
                 if "message to be replied not found" in str(exc).lower():
-                    return await bot.send_message(chat_id=int(group_id), text=text)
+                    return await bot.send_message(chat_id=int(group_id), text=safe_text)
                 raise
         return await bot.send_message(**kwargs)
 
