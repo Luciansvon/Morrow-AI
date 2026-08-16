@@ -1,4 +1,4 @@
-"""Bounded hybrid retrieval: pinned structured truth + FTS5 + sqlite-vec RRF."""
+"""Bounded hybrid retrieval: query-relevant structured truth + FTS5 + sqlite-vec RRF."""
 
 import asyncio
 import re
@@ -10,18 +10,30 @@ from src.memory.vector_index import memory_vector_index
 from src.storage.sqlite import db
 
 _QUERY_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+_GENERIC_QUERY_TOKENS = {
+    "apa", "apakah", "bagaimana", "gimana", "kenapa", "kok", "terus", "lanjut",
+    "lanjutkan", "udah", "sudah", "belum", "dong", "nih", "tadi", "yang", "ini", "itu",
+    "dan", "atau", "dengan", "untuk", "dari", "kita", "saya", "aku", "gua", "gue", "lu",
+    "kamu", "tolong", "bantu", "cek", "lihat", "update", "status", "progress", "progres",
+    "keputusan", "decision", "fakta", "fact", "batasan", "constraint", "ingat", "memori",
+}
 
 
 class HybridMemoryRetriever:
     @staticmethod
-    def _fts_query(text: str) -> str | None:
+    def _meaningful_tokens(text: str) -> list[str]:
         tokens: list[str] = []
-        for token in _QUERY_TOKEN_RE.findall(text.lower()):
-            if len(token) < 2 or token in tokens:
+        for token in _QUERY_TOKEN_RE.findall((text or "").lower()):
+            if len(token) < 2 or token in _GENERIC_QUERY_TOKENS or token in tokens:
                 continue
             tokens.append(token)
-            if len(tokens) >= 12:
+            if len(tokens) >= 20:
                 break
+        return tokens
+
+    @classmethod
+    def _fts_query(cls, text: str) -> str | None:
+        tokens = cls._meaningful_tokens(text)[:12]
         if not tokens:
             return None
         return " OR ".join(f'"{token}"' for token in tokens)
@@ -51,22 +63,37 @@ class HybridMemoryRetriever:
         except Exception:
             return []
 
-    @staticmethod
+    @classmethod
     async def _pinned_truth(
+        cls,
+        query: str,
         group_id: str,
         role: RoleID,
         limit: int,
     ) -> list[dict[str, Any]]:
-        return await db.fetch_all(
-            """SELECT id, group_id, scope, role_id, key, value, memory_type
+        """Prioritize decisions/constraints only when they overlap the current topic."""
+        query_tokens = set(cls._meaningful_tokens(query))
+        if not query_tokens:
+            return []
+        rows = await db.fetch_all(
+            """SELECT id, group_id, scope, role_id, key, value, memory_type,
+                      updated_at, created_at
                FROM memories
                WHERE group_id=?
                  AND memory_type IN ('decision','constraint')
                  AND (scope='shared' OR (scope='role' AND role_id=?))
                ORDER BY updated_at DESC, created_at DESC
-               LIMIT ?""",
-            (group_id, role.value, limit),
+               LIMIT 50""",
+            (group_id, role.value),
         )
+        ranked: list[tuple[int, int, dict[str, Any]]] = []
+        for recency, row in enumerate(rows):
+            row_tokens = set(cls._meaningful_tokens(f"{row.get('key', '')} {row.get('value', '')}"))
+            overlap = len(query_tokens & row_tokens)
+            if overlap > 0:
+                ranked.append((overlap, -recency, row))
+        ranked.sort(key=lambda item: (-item[0], -item[1]))
+        return [row for _, _, row in ranked[:limit]]
 
     async def retrieve(
         self,
@@ -75,9 +102,15 @@ class HybridMemoryRetriever:
         role: RoleID,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
+        # A vague standalone follow-up such as "gimana?" has no topic. Conversation
+        # continuity must resolve it before memory retrieval; otherwise injecting an
+        # arbitrary recent decision is more harmful than returning no memory at all.
+        if not self._meaningful_tokens(query):
+            return []
+
         top_k = settings.memory_hybrid_top_k if limit is None else max(1, limit)
         candidate_k = min(50, max(top_k * 2, 8))
-        pinned_task = self._pinned_truth(group_id, role, min(4, top_k))
+        pinned_task = self._pinned_truth(query, group_id, role, min(4, top_k))
         fts_task = self._fts_search(query, group_id, role, candidate_k)
         semantic_task = memory_vector_index.search(query, group_id, role, candidate_k)
         pinned, fts_rows, semantic_rows = await asyncio.gather(
