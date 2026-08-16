@@ -274,3 +274,24 @@ async def test_telegram_sender_falls_back_when_reply_target_missing():
     assert res == fake_sent
     assert fake_bot.send_message.call_count == 2
 
+
+@pytest.mark.asyncio
+async def test_current_datetime_policy_classification_and_execution():
+    from src.tools.builtins import ensure_builtin_tools_registered
+    from src.tools.executor import tool_executor
+    from src.tools.policy import tool_policy
+
+    ensure_builtin_tools_registered()
+    assert tool_policy.classify("current_datetime") == "internal"
+    assert tool_policy.is_internal_action("current_datetime") is True
+
+    result = await tool_executor.execute_tool(
+        tool_name="current_datetime",
+        parameters={"timezone": "Jakarta"},
+    )
+    assert result["success"] is True
+    assert "result" in result
+    assert result["result"]["timezone"] == "Asia/Jakarta"
+    assert "weekday" in result["result"]
+
+

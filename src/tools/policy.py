@@ -11,6 +11,7 @@ INTERNAL_ACTIONS: set[str] = {
     "propose_decision",
     "query_memory",
     "calculate",
+    "current_datetime",
     "morrow_tool_search",
     "browser_open",
     "browser_snapshot",
