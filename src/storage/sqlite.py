@@ -100,7 +100,19 @@ class DatabaseManager:
                 await conn.execute("""INSERT INTO memories (id, group_id, scope, role_id, key, value, memory_type, created_at, updated_at) SELECT id, '__global__', scope, role_id, key, value, memory_type, created_at, updated_at FROM memories_legacy_v02""")
                 await conn.execute("DROP TABLE memories_legacy_v02")
         await self._migrate_tool_execution_journal(conn)
-        migrations = {"memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")], "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")], "approvals": [("execution_error", "TEXT")], "processed_events": [("group_id", "TEXT")], "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")]}
+        migrations = {
+            "memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")],
+            "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")],
+            "approvals": [("execution_error", "TEXT")],
+            "processed_events": [("group_id", "TEXT")],
+            "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")],
+            "message_agent_map": [
+                ("thread_id", "TEXT"),
+                ("task_id", "TEXT"),
+                ("root_user_text", "TEXT"),
+                ("response_text", "TEXT"),
+            ],
+        }
         for table, additions in migrations.items():
             if not await self._table_exists(table):
                 continue
