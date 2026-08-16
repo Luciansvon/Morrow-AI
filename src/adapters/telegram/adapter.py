@@ -28,6 +28,7 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
         bot: Any,
         group_id: str,
         platform_message_id: str,
+        user_text: str = "",
     ) -> list[AttachmentInfo]:
         items: list[tuple[Any, str, int | None]] = []
         document = getattr(message, "document", None)
@@ -67,6 +68,7 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                             "group_id": group_id,
                             "thread_id": f"thr_{group_id}_{platform_message_id}",
                         },
+                        user_prompt=user_text,
                     )
                 )
             except Exception as exc:
@@ -117,6 +119,7 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                         current_bot,
                         norm.group_id,
                         norm.message_id,
+                        norm.text,
                     )
                     await self.message_handler(norm)
                 return message_handler
