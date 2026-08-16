@@ -26,6 +26,16 @@ def test_personas_are_role_specific_and_keep_identity_honest():
         assert "Jangan mengarang pengalaman fisik" in prompt
 
 
+def test_personas_share_natural_response_style_contract():
+    for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR):
+        prompt = persona_context(role, WorkloadType.ROUTINE)
+        assert "Utamakan paragraf natural" in prompt
+        assert 'Kekuatan / Kekurangan / Saran / Pertanyaan' in prompt
+        assert "Hindari bold, tanda bintang, emoji, dan dekorasi Markdown berlebihan" in prompt
+        assert "jangan otomatis menyarankan resep tech generik" in prompt
+        assert "Jangan mengakhiri setiap jawaban dengan pertanyaan lanjutan" in prompt
+
+
 def test_fast_social_only_covers_simple_greetings():
     assert is_fast_social("halo semua") is True
     assert is_fast_social("pagi tim") is True
