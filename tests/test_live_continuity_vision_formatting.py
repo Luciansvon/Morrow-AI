@@ -65,7 +65,16 @@ async def test_reply_chain_restores_root_request_and_thread():
         platform="telegram",
     )
     await adapter._hydrate_conversation_context(initial)
-    assert initial.conversation_thread_id == "thr_-100123456_100"
+    # Fresh messages persist a thread id for future replies but do not mark themselves
+    # as inherited continuations inside NormalizedMessage.
+    assert initial.conversation_thread_id is None
+    stored_initial = await db.fetch_one(
+        "SELECT * FROM conversation_message_map WHERE platform_message_id=?",
+        ("telegram:-100123456:100",),
+    )
+    assert stored_initial is not None
+    saved_thread = stored_initial["thread_id"]
+    assert saved_thread == "thr_-100123456_100"
 
     await db.execute(
         """INSERT INTO conversation_message_map
@@ -75,7 +84,7 @@ async def test_reply_chain_restores_root_request_and_thread():
             "telegram:-100123456:200",
             "-100123456",
             "manager",
-            initial.conversation_thread_id,
+            saved_thread,
             initial.text,
             "Halaman sudah terbuka. Sekarang ambil screenshot.",
         ),
@@ -89,11 +98,57 @@ async def test_reply_chain_restores_root_request_and_thread():
         reply_to_message_id="200",
     )
     await adapter._hydrate_conversation_context(followup)
-    assert followup.conversation_thread_id == initial.conversation_thread_id
+    assert followup.conversation_thread_id == saved_thread
     assert followup.conversation_root_text == initial.text
     assert followup.reply_to_text == "Halaman sudah terbuka. Sekarang ambil screenshot."
     assert "https://example.com" in followup.contextual_text()
     assert "gimana?" in followup.contextual_text()
+
+
+@pytest.mark.asyncio
+async def test_fresh_browser_message_is_not_mistaken_for_reply_continuation(monkeypatch):
+    monkeypatch.setattr(settings, "browser_enabled", True)
+    adapter = TelegramMultiBotAdapter()
+    message = NormalizedMessage(
+        message_id="fresh-browser-1",
+        group_id="g1",
+        sender_id="u1",
+        text=(
+            "Manager, gunakan browser automation Morrow untuk buka https://example.com "
+            "lalu sebutkan isi utamanya."
+        ),
+        platform="telegram",
+    )
+    await adapter._hydrate_conversation_context(message)
+    assert message.conversation_thread_id is None
+
+    calls: list[str] = []
+    model_calls = 0
+
+    async def fake_tool_execute(tool_name, parameters, **kwargs):
+        calls.append(tool_name)
+        if tool_name == "browser_open":
+            return {"success": True, "result": {"title": "Example Domain", "url": "https://example.com/"}}
+        if tool_name == "browser_snapshot":
+            return {"success": True, "result": {"snapshot": '- heading "Example Domain"'}}
+        raise AssertionError(tool_name)
+
+    async def fake_chat_completion(**kwargs):
+        nonlocal model_calls
+        model_calls += 1
+        if model_calls < 3:
+            return LLMResponse(content="Saya lanjut cek halaman.", model="test/model")
+        return LLMResponse(content="Isinya halaman contoh Example Domain.", model="test/model")
+
+    monkeypatch.setattr("src.agents.runtime.tool_executor.execute_tool", fake_tool_execute)
+    monkeypatch.setattr("src.agents.runtime.openrouter_client.chat_completion", fake_chat_completion)
+    result = await manager_agent.execute(
+        message,
+        thread_id="thr_g1_fresh-browser-1",
+    )
+    assert result == "Isinya halaman contoh Example Domain."
+    assert calls == ["browser_open", "browser_snapshot"]
+    assert model_calls == 3
 
 
 @pytest.mark.asyncio
