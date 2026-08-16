@@ -1,4 +1,4 @@
-"""Memory Judge menyimpan fakta/keputusan eksplisit dari exchange, bukan spekulasi agent."""
+"""Memory Judge menyimpan fakta/keputusan eksplisit dari user, bukan spekulasi agent."""
 
 import hashlib
 import json
@@ -12,12 +12,20 @@ from src.llm.openrouter import openrouter_client
 from src.memory.service import memory_service
 
 JUDGE_SYSTEM_PROMPT = """Anda adalah Hakim Memori (Memory Judge) Morrow.
-Simpan hanya informasi durable yang benar-benar dinyatakan/ditetapkan pengguna atau hasil status sistem yang terverifikasi: fakta proyek, keputusan final, constraint, deadline, atau status penting.
-JANGAN simpan sapaan, brainstorming sementara, opini/saran agent, asumsi, atau fakta yang hanya dibuat oleh jawaban assistant.
-Jika assistant menyebut sesuatu yang tidak didukung pesan pengguna, jangan simpan sebagai fakta.
+Sumber kebenaran untuk evaluasi ini HANYA PESAN PENGGUNA yang diberikan. Jangan menggunakan, melengkapi, atau menebak fakta dari jawaban agent.
+Simpan hanya informasi durable yang benar-benar dinyatakan/ditetapkan pengguna: fakta proyek, keputusan final, constraint, deadline, atau status penting.
+JANGAN simpan sapaan, brainstorming sementara, pertanyaan, skenario hipotetis, opini/saran agent, asumsi, hasil riset agent, statistik eksternal, atau fakta yang tidak dinyatakan pengguna sebagai keadaan/keputusan yang durable.
+Jika sebuah kandidat tidak dapat ditunjukkan kembali ke kata-kata pengguna, jangan simpan.
 Output JSON ketat:
 {"should_store": true|false, "items": [{"scope":"shared"|"role","key":"...","value":"...","memory_type":"decision"|"fact"|"constraint"|"status","reason":"..."}]}
 """
+
+_MEMORY_STOPWORDS = {
+    "yang", "dan", "atau", "dengan", "untuk", "dari", "ini", "itu", "adalah", "sebagai",
+    "saya", "aku", "gua", "gue", "kamu", "lu", "kami", "kita", "morrow", "manager",
+    "marketing", "advisor", "bahwa", "jadi", "tetap", "harus", "akan", "bisa", "boleh",
+}
+_NUMBER_RE = re.compile(r"\b\d+(?:[.,]\d+)?%?\b")
 
 
 class MemoryJudge:
@@ -105,6 +113,30 @@ class MemoryJudge:
             return {"key": key, "value": raw_value, "memory_type": memory_type}
         return None
 
+    @staticmethod
+    def _support_tokens(value: str) -> set[str]:
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", value.lower())
+            if len(token) >= 3 and token not in _MEMORY_STOPWORDS
+        }
+
+    @classmethod
+    def _candidate_supported_by_user(cls, value: str, user_text: str) -> bool:
+        """Fail closed when the judge invents details not present in the user's message."""
+        candidate_numbers = set(_NUMBER_RE.findall(value.lower()))
+        user_numbers = set(_NUMBER_RE.findall(user_text.lower()))
+        if candidate_numbers - user_numbers:
+            return False
+
+        candidate_tokens = cls._support_tokens(value)
+        user_tokens = cls._support_tokens(user_text)
+        if not candidate_tokens:
+            return False
+        overlap = len(candidate_tokens & user_tokens)
+        minimum = 1 if len(candidate_tokens) <= 2 else max(2, (len(candidate_tokens) + 2) // 3)
+        return overlap >= minimum
+
     @classmethod
     async def commit_explicit_directive(
         cls,
@@ -149,12 +181,10 @@ class MemoryJudge:
     ) -> dict[str, Any] | None:
         if user_text is None and assistant_text is None:
             user_text = text or ""
-            assistant_text = ""
         if not (user_text or "").strip():
             return None
         bounded_user = (user_text or "")[: settings.max_message_context_chars]
-        bounded_assistant = (assistant_text or "")[: settings.max_agent_output_tokens * 6]
-        payload = f"PESAN PENGGUNA:\n{bounded_user}\n\nJAWABAN AGENT:\n{bounded_assistant}"
+        payload = f"PESAN PENGGUNA (SATU-SATUNYA SUMBER KEBENARAN):\n{bounded_user}"
         try:
             res = await openrouter_client.chat_completion(
                 messages=[
@@ -177,12 +207,14 @@ class MemoryJudge:
                 data["stored_items"] = []
                 return data
             items = data.get("items") or []
-            # compatibility dengan shape lama
             if not items and data.get("key") and data.get("value"):
                 items = [data]
             stored_items: list[dict[str, Any]] = []
             for item in items[:5]:
                 if not item.get("key") or not item.get("value"):
+                    continue
+                value = str(item["value"])[:4000]
+                if not MemoryJudge._candidate_supported_by_user(value, bounded_user):
                     continue
                 scope = MemoryScope.SHARED if item.get("scope") == "shared" else MemoryScope.ROLE
                 if scope == MemoryScope.ROLE and role_id is None:
@@ -194,7 +226,7 @@ class MemoryJudge:
                 stored = await memory_service.set_memory(
                     scope=scope,
                     key=str(item["key"])[:120],
-                    value=str(item["value"])[:4000],
+                    value=value,
                     changed_by_actor=actor_id,
                     role_id=role_id if scope == MemoryScope.ROLE else None,
                     changed_by_role=role_id,
