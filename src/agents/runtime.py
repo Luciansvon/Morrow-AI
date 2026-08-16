@@ -214,7 +214,7 @@ class AgentRuntime:
 ## MEMORI JANGKA PANJANG RELEVAN:
 {memory_str}
 
-## TUGAS AKTIF RELEVAN:
+## TUGAS AKTIF SAYA:
 {tasks_str}
 
 ## STATUS BROWSER AUTOMATION:
