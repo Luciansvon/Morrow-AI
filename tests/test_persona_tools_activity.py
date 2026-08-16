@@ -26,14 +26,23 @@ def test_personas_are_role_specific_and_keep_identity_honest():
         assert "Jangan mengarang pengalaman fisik" in prompt
 
 
-def test_personas_share_natural_response_style_contract():
+def test_personas_include_response_style_rules_globally():
+    """Memastikan seluruh persona membawa aturan response style natural secara global."""
     for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR):
-        prompt = persona_context(role, WorkloadType.ROUTINE)
-        assert "Utamakan paragraf natural" in prompt
-        assert 'Kekuatan / Kekurangan / Saran / Pertanyaan' in prompt
-        assert "Hindari bold, tanda bintang, emoji, dan dekorasi Markdown berlebihan" in prompt
-        assert "jangan otomatis menyarankan resep tech generik" in prompt
-        assert "Jangan mengakhiri setiap jawaban dengan pertanyaan lanjutan" in prompt
+        prompt_casual = persona_context(role, WorkloadType.CASUAL)
+        prompt_serious = persona_context(role, WorkloadType.PLANNING)
+
+        for prompt in (prompt_casual, prompt_serious):
+            # Invariant: Paragraph-first
+            assert "Utamakan paragraf natural" in prompt
+            # Invariant: Larangan template kaku Kekuatan/Kekurangan/Saran/Pertanyaan
+            assert "Kekuatan / Kekurangan / Saran / Pertanyaan" in prompt
+            # Invariant: Pembatasan bold dan dekorasi berlebihan
+            assert "Hindari bold, tanda bintang (*), emoji, dan dekorasi Markdown berlebihan" in prompt
+            # Invariant: Larangan saran visual tech generik
+            assert "biru, ungu, gradient, glow, sparkle, atau neon" in prompt
+            # Invariant: Larangan pertanyaan penutup otomatis
+            assert "Apakah mau saya..." in prompt
 
 
 def test_fast_social_only_covers_simple_greetings():
