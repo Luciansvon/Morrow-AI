@@ -1,14 +1,37 @@
 """LLM-facing browser tools backed by the configured BrowserBackend."""
 
+import hashlib
+import json
 from typing import Any
 
-from src.browser.agent_browser import agent_browser_backend  # compatibility test/legacy hook
+from src.browser.agent_browser import agent_browser_backend  # compatibility test hook
 from src.browser.base import BrowserActionClass
 from src.browser.provider import get_browser_backend
 from src.core.config import settings
 from src.tools.registry import ToolCapability, tool_registry
 
-__all__ = ["agent_browser_backend"]
+__all__ = ["agent_browser_backend", "browser_state_fingerprint"]
+
+
+def _fingerprint_snapshot(snapshot: dict[str, Any]) -> str:
+    canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def browser_state_fingerprint(task_space: str) -> str:
+    """Fingerprint the current semantic browser state for approval binding."""
+    snapshot = await get_browser_backend().snapshot(task_space=task_space)
+    return _fingerprint_snapshot(snapshot)
+
+
+async def _verify_expected_state(task_space: str, expected_state_hash: str | None) -> None:
+    if not expected_state_hash:
+        return
+    current = await browser_state_fingerprint(task_space)
+    if current != expected_state_hash:
+        raise ValueError(
+            "BROWSER_STATE_CHANGED: halaman/form berubah setelah approval dibuat; approval lama tidak boleh dieksekusi."
+        )
 
 
 async def browser_open(url: str, _task_space: str) -> dict[str, Any]:
@@ -41,10 +64,69 @@ async def browser_type(target: str, value: str, _task_space: str) -> dict[str, A
     )
 
 
-async def browser_click(target: str, _task_space: str) -> dict[str, Any]:
+async def browser_select(target: str, value: str, _task_space: str) -> dict[str, Any]:
+    return await get_browser_backend().interact(
+        "select",
+        {"target": target, "value": value},
+        task_space=_task_space,
+        action_class=BrowserActionClass.PREPARE,
+    )
+
+
+async def browser_check(target: str, _task_space: str) -> dict[str, Any]:
+    return await get_browser_backend().interact(
+        "check",
+        {"target": target},
+        task_space=_task_space,
+        action_class=BrowserActionClass.PREPARE,
+    )
+
+
+async def browser_uncheck(target: str, _task_space: str) -> dict[str, Any]:
+    return await get_browser_backend().interact(
+        "uncheck",
+        {"target": target},
+        task_space=_task_space,
+        action_class=BrowserActionClass.PREPARE,
+    )
+
+
+async def browser_scroll(
+    _task_space: str,
+    direction: str = "down",
+    amount: int = 500,
+) -> dict[str, Any]:
+    return await get_browser_backend().interact(
+        "scroll",
+        {"direction": direction, "amount": amount},
+        task_space=_task_space,
+        action_class=BrowserActionClass.PREPARE,
+    )
+
+
+async def browser_click(
+    target: str,
+    _task_space: str,
+    _state_hash: str | None = None,
+) -> dict[str, Any]:
+    await _verify_expected_state(_task_space, _state_hash)
     return await get_browser_backend().interact(
         "click",
         {"target": target},
+        task_space=_task_space,
+        action_class=BrowserActionClass.COMMIT,
+    )
+
+
+async def browser_press(
+    key: str,
+    _task_space: str,
+    _state_hash: str | None = None,
+) -> dict[str, Any]:
+    await _verify_expected_state(_task_space, _state_hash)
+    return await get_browser_backend().interact(
+        "press",
+        {"key": key},
         task_space=_task_space,
         action_class=BrowserActionClass.COMMIT,
     )
@@ -104,7 +186,7 @@ def ensure_browser_tools_registered() -> None:
     _register(
         "browser_snapshot",
         browser_snapshot,
-        "Ambil snapshot elemen interaktif halaman browser aktif untuk reasoning.",
+        "Ambil snapshot compact elemen interaktif halaman browser aktif untuk reasoning.",
         {"type": "object", "properties": {}, "additionalProperties": False},
         capability=ToolCapability.READ,
         risk="low",
@@ -126,6 +208,7 @@ def ensure_browser_tools_registered() -> None:
     for name, func, verb in (
         ("browser_fill", browser_fill, "Isi field"),
         ("browser_type", browser_type, "Ketik ke field"),
+        ("browser_select", browser_select, "Pilih opsi"),
     ):
         _register(
             name,
@@ -144,8 +227,50 @@ def ensure_browser_tools_registered() -> None:
             risk="medium",
             side_effect=False,
             retry_safe=False,
-            keywords={"browser", "form", "fill", "type", "isi", "ketik", "prepare"},
+            keywords={"browser", "form", name.removeprefix("browser_"), "isi", "pilih", "prepare"},
         )
+    for name, func, verb in (
+        ("browser_check", browser_check, "Centang"),
+        ("browser_uncheck", browser_uncheck, "Hilangkan centang"),
+    ):
+        _register(
+            name,
+            func,
+            f"{verb} checkbox/radio secara lokal tanpa submit.",
+            {
+                "type": "object",
+                "properties": {"target": {"type": "string"}},
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+            capability=ToolCapability.PREPARE,
+            risk="medium",
+            side_effect=False,
+            retry_safe=False,
+            keywords={"browser", "form", "checkbox", "check", "centang", "prepare"},
+        )
+    _register(
+        "browser_scroll",
+        browser_scroll,
+        "Scroll halaman tanpa melakukan side effect eksternal.",
+        {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": ["up", "down", "left", "right"],
+                    "default": "down",
+                },
+                "amount": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 500},
+            },
+            "additionalProperties": False,
+        },
+        capability=ToolCapability.PREPARE,
+        risk="low",
+        side_effect=False,
+        retry_safe=True,
+        keywords={"browser", "scroll", "gulir", "atas", "bawah", "page"},
+    )
     _register(
         "browser_click",
         browser_click,
@@ -161,4 +286,20 @@ def ensure_browser_tools_registered() -> None:
         side_effect=True,
         retry_safe=False,
         keywords={"browser", "click", "submit", "send", "purchase", "delete", "klik"},
+    )
+    _register(
+        "browser_press",
+        browser_press,
+        "Tekan tombol keyboard pada browser. Diposisikan sebagai COMMIT karena Enter/shortcut dapat mengirim form atau memicu side effect.",
+        {
+            "type": "object",
+            "properties": {"key": {"type": "string"}},
+            "required": ["key"],
+            "additionalProperties": False,
+        },
+        capability=ToolCapability.COMMIT,
+        risk="high",
+        side_effect=True,
+        retry_safe=False,
+        keywords={"browser", "press", "keyboard", "enter", "submit", "tekan"},
     )

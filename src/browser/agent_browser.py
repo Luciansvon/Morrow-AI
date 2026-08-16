@@ -3,7 +3,11 @@
 import asyncio
 import hashlib
 import json
+import os
 import re
+import shutil
+import subprocess
+from pathlib import Path
 from typing import Any, ClassVar
 
 from src.browser.base import BrowserActionClass, BrowserBackend, BrowserBackendUnavailableError
@@ -11,7 +15,7 @@ from src.core.config import settings
 
 
 class AgentBrowserBackend(BrowserBackend):
-    """Legacy compatibility backend backed by the vercel-labs agent-browser CLI."""
+    """Production local-browser backend backed by the vercel-labs agent-browser CLI."""
 
     _ACTION_CLASS_ORDER: ClassVar[dict[BrowserActionClass, int]] = {
         BrowserActionClass.READ: 0,
@@ -50,12 +54,30 @@ class AgentBrowserBackend(BrowserBackend):
         prefix = sanitized[:40].strip("-") or "morrow"
         return f"{prefix}-{digest}"
 
-    async def _run(self, task_space: str, *command: str) -> dict[str, Any]:
+    def _resolved_executable(self) -> str:
+        configured = self.executable.strip()
+        explicit = Path(configured).expanduser()
+        if explicit.parent != Path(".") and explicit.exists() and explicit.is_file():
+            return str(explicit)
+        return shutil.which(configured) or configured
+
+    def _command_argv(self, task_space: str, *command: str) -> list[str]:
         session = self._session_name(task_space)
-        argv = [self.executable, "--session", session, "--json"]
+        executable = self._resolved_executable()
+        base = [executable, "--session", session, "--json"]
         if self.headed:
-            argv.append("--headed")
-        argv.extend(command)
+            base.append("--headed")
+        base.extend(command)
+
+        # npm global binaries on Windows are commonly .cmd/.bat shims. Resolve and
+        # invoke them explicitly through COMSPEC so CreateProcess behavior is stable.
+        if os.name == "nt" and Path(executable).suffix.lower() in {".cmd", ".bat"}:
+            comspec = os.environ.get("COMSPEC") or "cmd.exe"
+            return [comspec, "/d", "/s", "/c", subprocess.list2cmdline(base)]
+        return base
+
+    async def _run(self, task_space: str, *command: str) -> dict[str, Any]:
+        argv = self._command_argv(task_space, *command)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -95,7 +117,8 @@ class AgentBrowserBackend(BrowserBackend):
         return await self._run(task_space, "open", url)
 
     async def snapshot(self, *, task_space: str) -> dict[str, Any]:
-        return await self._run(task_space, "snapshot", "-i")
+        # Interactive + compact keeps the model context small while retaining actionable refs.
+        return await self._run(task_space, "snapshot", "-i", "-c")
 
     async def screenshot(self, *, task_space: str) -> dict[str, Any]:
         return await self._run(task_space, "screenshot")

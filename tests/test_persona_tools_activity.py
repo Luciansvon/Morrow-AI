@@ -3,7 +3,9 @@
 import pytest
 
 from src.adapters.cli import CLIAdapter
+from src.agents.advisor import advisor_agent
 from src.agents.manager import manager_agent
+from src.agents.marketing import marketing_agent
 from src.core.orchestrator import SystemOrchestrator
 from src.core.types import NormalizedMessage, RiskLevel, RoleID, WorkloadType
 from src.llm.provider import LLMResponse
@@ -18,32 +20,52 @@ def test_personas_are_role_specific_and_keep_identity_honest():
     marketing = persona_context(RoleID.MARKETING, WorkloadType.CASUAL)
     advisor = persona_context(RoleID.ADVISOR, WorkloadType.CASUAL)
 
-    assert "Millennial Indonesia" in manager
-    assert "Gen Z Indonesia" in marketing
-    assert "Boomer-inspired" in advisor
+    assert "manager_action_v1" in manager
+    assert "Pragmatic Action Manager" in manager
+    assert "Bob Sadino" in manager
+
+    assert "marketing_growth_v1" in marketing
+    assert "Technical Growth Strategist" in marketing
+    assert "Dharmesh Shah" in marketing
+
+    assert "advisor_vision_v1" in advisor
+    assert "Visionary Humanist Advisor" in advisor
+    assert "Jack Ma" in advisor
+
     for prompt in (manager, marketing, advisor):
-        assert "Jika pengguna bertanya langsung apakah kamu manusia/bot/AI" in prompt
-        assert "Jangan mengarang pengalaman fisik" in prompt
+        assert "BUKAN identitas" in prompt
+        assert "Jangan pernah mengaku sebagai tokoh" in prompt
+        assert "Jangan mengarang pengalaman pribadi" in prompt
+        assert "agent AI Morrow" in prompt
 
 
-def test_personas_include_response_style_rules_globally():
-    """Memastikan seluruh persona membawa aturan response style natural secara global."""
-    for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR):
-        prompt_casual = persona_context(role, WorkloadType.CASUAL)
-        prompt_serious = persona_context(role, WorkloadType.PLANNING)
+@pytest.mark.asyncio
+async def test_response_style_rules_are_injected_once_in_final_runtime_contract():
+    """Paragraph-first stays global without duplicating the same rules inside persona prompts."""
+    agents = {
+        RoleID.MANAGER: manager_agent,
+        RoleID.MARKETING: marketing_agent,
+        RoleID.ADVISOR: advisor_agent,
+    }
+    for role, agent in agents.items():
+        persona = persona_context(role, WorkloadType.ROUTINE)
+        assert "Default Telegram adalah paragraf natural" not in persona
 
-        for prompt in (prompt_casual, prompt_serious):
-            # Invariant: Paragraph-first
-            assert "Default Telegram adalah paragraf natural" in prompt
-            # Invariant: Larangan template kaku Kekuatan/Kekurangan/Saran/Pertanyaan
-            assert "Kekuatan / Kekurangan / Saran / Pertanyaan" in prompt
-            # Invariant: Pembatasan bold dan dekorasi berlebihan
-            assert "Default-nya tanpa **bold**" in prompt
-            # Invariant: Larangan saran visual tech generik
-            assert "biru, ungu, gradient, glow, sparkle, atau neon" in prompt
-            # Invariant: Larangan pertanyaan penutup otomatis
-            assert "Apakah mau saya..." in prompt
-            assert "paling banyak satu daftar" in prompt
+        context = await agent.assemble_context(
+            NormalizedMessage(
+                message_id=f"style-once-{role.value}",
+                group_id="group_core_team_01",
+                sender_id="user_bima_01",
+                text=f"{role.value}, review keputusan ini secara singkat",
+            )
+        )
+        system = context[0]["content"]
+        assert system.count("Default Telegram adalah paragraf natural") == 1
+        assert system.count("Kekuatan / Kekurangan / Saran / Pertanyaan") == 1
+        assert system.count("Default-nya tanpa **bold**") == 1
+        assert system.count("biru, ungu, gradient, glow, sparkle, atau neon") == 1
+        assert system.count("Apakah mau saya...") == 1
+        assert system.count("paling banyak satu daftar") == 1
 
 
 def test_fast_social_only_covers_simple_greetings():
