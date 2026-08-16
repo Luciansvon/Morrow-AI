@@ -54,7 +54,7 @@ async def test_final_context_locks_role_and_paragraph_mode_for_ordinary_reply():
     assert "jangan mengaku sebagai coordinator" in system
     assert "FORMAT WAJIB untuk respons ini: tulis sebagai 1-5 paragraf natural" in system
     assert "Jangan gunakan heading Markdown, bullet list, numbered list" in system
-    assert system.rfind("KONTRAK OUTPUT FINAL") > system.rfind("TUGAS AKTIF RELEVAN")
+    assert system.rfind("KONTRAK OUTPUT FINAL") > system.rfind("TUGAS AKTIF SAYA")
 
 
 @pytest.mark.asyncio
