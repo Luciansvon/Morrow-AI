@@ -28,7 +28,7 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
         return f"telegram:{group_id}:{message_id}"
 
     async def _hydrate_conversation_context(self, message) -> None:
-        """Restore parent thread/root context and persist the current user message."""
+        """Restore inherited reply context and persist the current message's thread identity."""
         parent = None
         if message.reply_to_message_id:
             parent = await db.fetch_one(
@@ -49,10 +49,13 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
             if not message.reply_to_text:
                 message.reply_to_text = parent.get("response_text") or None
 
-        message.conversation_thread_id = (
+        # A new Telegram message still needs a durable thread id so replies can inherit it,
+        # but the NormalizedMessage field itself is reserved for inherited continuity.
+        # AgentRuntime receives the identical fresh thread id from the orchestrator.
+        persisted_thread_id = (
             message.conversation_thread_id or f"thr_{message.group_id}_{message.message_id}"
         )
-        message.conversation_root_text = (
+        persisted_root_text = (
             message.conversation_root_text or (message.text or "").strip()
         )
         await db.execute(
@@ -64,9 +67,9 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                 self._conversation_key(message.group_id, message.message_id),
                 message.group_id,
                 message.reply_to_role.value if message.reply_to_role else None,
-                message.conversation_thread_id,
+                persisted_thread_id,
                 message.conversation_task_id,
-                message.conversation_root_text,
+                persisted_root_text,
                 message.text,
             ),
         )
