@@ -2,6 +2,8 @@
 
 import pytest
 
+from src.agents.manager import manager_agent
+from src.agents.marketing import marketing_agent
 from src.approval.gateway import approval_gateway
 from src.browser.agent_browser import AgentBrowserBackend, agent_browser_backend
 from src.browser.base import BrowserActionClass, BrowserBackendUnavailableError
@@ -11,7 +13,8 @@ from src.browser.provider import (
     validate_browser_runtime,
 )
 from src.core.config import settings
-from src.core.types import MessageIntent, RiskLevel, RoleID, WorkloadType
+from src.core.types import MessageIntent, NormalizedMessage, RiskLevel, RoleID, WorkloadType
+from src.llm.provider import LLMResponse
 from src.persona.profiles import persona_context, persona_loader, persona_metadata
 from src.routing.addressing import AddressingDetector
 from src.tools.builtins import ensure_builtin_tools_registered
@@ -189,6 +192,21 @@ def test_serious_context_suppresses_persona_humor():
     assert "Humor: NONE untuk konteks ini." in rendered
 
 
+@pytest.mark.asyncio
+async def test_runtime_propagates_high_risk_into_persona_humor_suppression():
+    context = await marketing_agent.assemble_context(
+        NormalizedMessage(
+            message_id="persona-risk-1",
+            group_id="group_core_team_01",
+            sender_id="user_bima_01",
+            text="Marketing, evaluasi ini dengan hati-hati.",
+        ),
+        workload=WorkloadType.ROUTINE,
+        risk_level=RiskLevel.HIGH,
+    )
+    assert "Humor: NONE untuk konteks ini." in context[0]["content"]
+
+
 def test_persona_loader_has_versioned_metadata_and_neutral_fallback():
     assert persona_metadata(RoleID.MARKETING)["persona_version"] == "1.0.0"
     assert persona_metadata(RoleID.MANAGER)["persona_id"] == "manager_action_v1"
@@ -202,6 +220,26 @@ def test_persona_loader_has_versioned_metadata_and_neutral_fallback():
 def test_response_style_contract_is_not_duplicated_inside_persona_prompt():
     rendered = persona_context(RoleID.MANAGER, WorkloadType.ROUTINE)
     assert "KONTRAK GAYA JAWABAN NATURAL" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_agent_invocation_logs_persona_id_and_version(monkeypatch, caplog):
+    async def fake_chat_completion(**kwargs):
+        return LLMResponse(content="Siap.", model="test/model")
+
+    monkeypatch.setattr("src.agents.runtime.openrouter_client.chat_completion", fake_chat_completion)
+    with caplog.at_level("INFO", logger="src.agents.runtime"):
+        result = await manager_agent.execute(
+            NormalizedMessage(
+                message_id="persona-log-1",
+                group_id="group_core_team_01",
+                sender_id="user_bima_01",
+                text="Manager, cek prioritas ini.",
+            )
+        )
+    assert result == "Siap."
+    assert "persona_id=manager_action_v1" in caplog.text
+    assert "persona_version=1.0.0" in caplog.text
 
 
 def test_manager_is_coordinator_when_explicitly_included_even_if_named_second():
