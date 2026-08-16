@@ -59,16 +59,49 @@ class AddressingDetector:
             display_name = str(display_names.get(role.value, "")).strip().lower()
             if display_name:
                 terms.add(display_name)
-            patterns = [
-                rf"(?<!\w)@?{re.escape(term)}(?!\w)"
-                for term in terms
-            ]
+            patterns = [rf"(?<!\w)@?{re.escape(term)}(?!\w)" for term in terms]
             username = bot_registry.get_username(role)
             if username:
                 patterns.append(rf"(?<!\w)@{re.escape(username.lower())}(?!\w)")
             if any(re.search(pattern, text_lower) for pattern in patterns):
                 mentioned.append(role)
         return mentioned
+
+    @staticmethod
+    async def _restore_reply_context(message: NormalizedMessage) -> None:
+        """Enrich a Telegram reply with the original thread/root request before routing."""
+        if not message.reply_to_message_id:
+            return
+        canonical = f"{message.platform}:{message.group_id}:{message.reply_to_message_id}"
+        row = await db.fetch_one(
+            """SELECT role_id, thread_id, task_id, root_user_text, response_text
+               FROM conversation_message_map WHERE platform_message_id=? AND group_id=?""",
+            (canonical, message.group_id),
+        )
+        if row:
+            if message.reply_to_role is None and row.get("role_id"):
+                message.reply_to_role = RoleID(row["role_id"])
+            message.conversation_thread_id = row.get("thread_id") or message.conversation_thread_id
+            message.conversation_task_id = row.get("task_id") or message.conversation_task_id
+            message.conversation_root_text = row.get("root_user_text") or message.conversation_root_text
+            if not message.reply_to_text:
+                message.reply_to_text = row.get("response_text") or None
+            return
+
+        # Compatibility fallback for older messages: role continuity still works even
+        # when the message predates the dedicated conversation map.
+        legacy = await db.fetch_one(
+            "SELECT originating_role_id FROM message_agent_map WHERE platform_message_id=?",
+            (canonical,),
+        )
+        if not legacy:
+            legacy = await db.fetch_one(
+                """SELECT originating_role_id FROM message_agent_map
+                   WHERE platform_message_id=? AND group_id=?""",
+                (message.reply_to_message_id, message.group_id),
+            )
+        if message.reply_to_role is None and legacy and legacy.get("originating_role_id"):
+            message.reply_to_role = RoleID(legacy["originating_role_id"])
 
     @staticmethod
     def _work_coordinator(mentioned_roles: list[RoleID]) -> RoleID:
@@ -118,6 +151,7 @@ class AddressingDetector:
 
     @classmethod
     async def detect(cls, message: NormalizedMessage) -> AddressingResult:
+        await cls._restore_reply_context(message)
         text_lower = message.text.strip().lower()
         intent = intent_detector.detect_intent(message.text)
 

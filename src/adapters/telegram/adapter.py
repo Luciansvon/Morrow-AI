@@ -13,6 +13,7 @@ from src.core.config import settings
 from src.core.normalizer import MessageNormalizer
 from src.core.types import AttachmentInfo, RoleID
 from src.files.pipeline import attachment_pipeline
+from src.storage.sqlite import db
 
 
 class TelegramMultiBotAdapter(BaseChannelAdapter):
@@ -22,12 +23,65 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
         self._polling_tasks: list[asyncio.Task] = []
         self._running = False
 
+    @staticmethod
+    def _conversation_key(group_id: str, message_id: str) -> str:
+        return f"telegram:{group_id}:{message_id}"
+
+    async def _hydrate_conversation_context(self, message) -> None:
+        """Restore inherited reply context and persist the current message's thread identity."""
+        parent = None
+        if message.reply_to_message_id:
+            parent = await db.fetch_one(
+                """SELECT role_id, thread_id, task_id, root_user_text, response_text
+                   FROM conversation_message_map
+                   WHERE platform_message_id=? AND group_id=?""",
+                (
+                    self._conversation_key(message.group_id, message.reply_to_message_id),
+                    message.group_id,
+                ),
+            )
+        if parent:
+            if message.reply_to_role is None and parent.get("role_id"):
+                message.reply_to_role = RoleID(parent["role_id"])
+            message.conversation_thread_id = parent.get("thread_id") or message.conversation_thread_id
+            message.conversation_task_id = parent.get("task_id") or message.conversation_task_id
+            message.conversation_root_text = parent.get("root_user_text") or message.conversation_root_text
+            if not message.reply_to_text:
+                message.reply_to_text = parent.get("response_text") or None
+
+        # A new Telegram message still needs a durable thread id so replies can inherit it,
+        # but the NormalizedMessage field itself is reserved for inherited continuity.
+        # AgentRuntime receives the identical fresh thread id from the orchestrator.
+        persisted_thread_id = (
+            message.conversation_thread_id or f"thr_{message.group_id}_{message.message_id}"
+        )
+        persisted_root_text = (
+            message.conversation_root_text or (message.text or "").strip()
+        )
+        await db.execute(
+            """INSERT OR REPLACE INTO conversation_message_map
+               (platform_message_id, group_id, role_id, thread_id, task_id,
+                root_user_text, response_text)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                self._conversation_key(message.group_id, message.message_id),
+                message.group_id,
+                message.reply_to_role.value if message.reply_to_role else None,
+                persisted_thread_id,
+                message.conversation_task_id,
+                persisted_root_text,
+                message.text,
+            ),
+        )
+
     async def _download_attachments(
         self,
         message: Any,
         bot: Any,
         group_id: str,
         platform_message_id: str,
+        user_text: str = "",
+        thread_id: str | None = None,
     ) -> list[AttachmentInfo]:
         items: list[tuple[Any, str, int | None]] = []
         document = getattr(message, "document", None)
@@ -65,8 +119,9 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                         content,
                         usage_context={
                             "group_id": group_id,
-                            "thread_id": f"thr_{group_id}_{platform_message_id}",
+                            "thread_id": thread_id or f"thr_{group_id}_{platform_message_id}",
                         },
+                        user_prompt=user_text,
                     )
                 )
             except Exception as exc:
@@ -112,11 +167,14 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                     if not won:
                         return
                     norm.event_claimed = True
+                    await self._hydrate_conversation_context(norm)
                     norm.attachments = await self._download_attachments(
                         message,
                         current_bot,
                         norm.group_id,
                         norm.message_id,
+                        norm.text,
+                        norm.conversation_thread_id,
                     )
                     await self.message_handler(norm)
                 return message_handler

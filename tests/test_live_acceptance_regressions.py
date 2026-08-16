@@ -52,8 +52,10 @@ async def test_final_context_locks_role_and_paragraph_mode_for_ordinary_reply():
     system = context[0]["content"]
     assert "ROLE AKTIF TERKUNCI: ADVISOR" in system
     assert "jangan mengaku sebagai coordinator" in system
-    assert "FORMAT WAJIB untuk respons ini: tulis sebagai 1-5 paragraf natural" in system
-    assert "Jangan gunakan heading Markdown, bullet list, numbered list" in system
+    assert "FORMAT WAJIB untuk respons ini: tulis sebagai 1-5 paragraf pendek dan natural" in system
+    assert "satu ide utama per paragraf" in system
+    assert "setiap poin WAJIB dipisahkan satu baris kosong" in system
+    assert "Jangan menumpuk heading, separator" in system
     assert system.rfind("KONTRAK OUTPUT FINAL") > system.rfind("TUGAS AKTIF SAYA")
 
 
@@ -68,6 +70,7 @@ async def test_explicit_structured_request_keeps_structure_available():
     context = await manager_agent.assemble_context(message)
     system = context[0]["content"]
     assert "Pengguna meminta struktur eksplisit" in system
+    assert "beri satu baris kosong antar poin/list item" in system
 
 
 @pytest.mark.asyncio
@@ -293,5 +296,3 @@ async def test_current_datetime_policy_classification_and_execution():
     assert "result" in result
     assert result["result"]["timezone"] == "Asia/Jakarta"
     assert "weekday" in result["result"]
-
-

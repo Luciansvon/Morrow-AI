@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, platform_group_id TEXT U
 CREATE TABLE IF NOT EXISTS agents (role_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'active');
 CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, platform_message_id TEXT NOT NULL, group_id TEXT NOT NULL, sender_id TEXT NOT NULL, role_id TEXT, content TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS message_agent_map (platform_message_id TEXT PRIMARY KEY, originating_role_id TEXT NOT NULL, bot_identity TEXT, group_id TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS conversation_message_map (platform_message_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, role_id TEXT, thread_id TEXT, task_id TEXT, root_user_text TEXT, response_text TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS idx_conversation_message_group ON conversation_message_map(group_id, created_at);
 CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, group_id TEXT NOT NULL DEFAULT '__global__', scope TEXT NOT NULL, role_id TEXT, key TEXT NOT NULL, value TEXT NOT NULL, memory_type TEXT NOT NULL DEFAULT 'fact', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_shared_unique ON memories(group_id, key) WHERE scope = 'shared';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_role_unique ON memories(group_id, role_id, key) WHERE scope = 'role';
