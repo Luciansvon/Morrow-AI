@@ -6,16 +6,12 @@ import json
 import re
 from typing import Any, ClassVar
 
-from src.browser.base import BrowserActionClass, BrowserBackend
+from src.browser.base import BrowserActionClass, BrowserBackend, BrowserBackendUnavailableError
 from src.core.config import settings
 
 
-class BrowserBackendUnavailableError(RuntimeError):
-    """Configured browser backend is not installed or could not be started."""
-
-
 class AgentBrowserBackend(BrowserBackend):
-    """BrowserBackend implementation backed by the vercel-labs agent-browser CLI."""
+    """Legacy compatibility backend backed by the vercel-labs agent-browser CLI."""
 
     _ACTION_CLASS_ORDER: ClassVar[dict[BrowserActionClass, int]] = {
         BrowserActionClass.READ: 0,

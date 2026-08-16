@@ -11,6 +11,10 @@ class BrowserActionClass(str, Enum):
     COMMIT = "commit"
 
 
+class BrowserBackendUnavailableError(RuntimeError):
+    """Configured browser provider is unavailable on this machine/runtime."""
+
+
 class BrowserBackend(ABC):
     """Provider-neutral browser contract.
 

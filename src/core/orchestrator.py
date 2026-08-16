@@ -296,6 +296,38 @@ class SystemOrchestrator:
                 return approval_result
 
             addressing = await addressing_detector.detect(message)
+
+            explicit_memory = memory_judge.parse_explicit_directive(message.text)
+            if explicit_memory:
+                memory_role = addressing.coordinator or (
+                    addressing.target_agents[0] if addressing.target_agents else RoleID.MANAGER
+                )
+                try:
+                    stored = await memory_judge.commit_explicit_directive(
+                        message.text,
+                        actor_id=message.sender_id,
+                        role_id=memory_role,
+                        group_id=message.group_id,
+                    )
+                except Exception:
+                    stored = None
+                if stored and stored.get("verified"):
+                    memory_type_labels = {
+                        "decision": "keputusan",
+                        "constraint": "batasan",
+                        "fact": "fakta",
+                        "status": "status",
+                    }
+                    label = memory_type_labels.get(stored["memory_type"], stored["memory_type"])
+                    text = f"Sudah dicatat ke memori bersama sebagai {label}: {stored['value']}"
+                else:
+                    text = (
+                        "Belum tersimpan. Backend tidak berhasil memverifikasi write memori, "
+                        "jadi saya tidak akan mengklaim catatan itu sudah aman."
+                    )
+                await self._send(message, memory_role, text)
+                return text
+
             if addressing.intent == MessageIntent.SOCIAL:
                 targets = addressing.target_agents or [RoleID.MANAGER]
                 responses = []

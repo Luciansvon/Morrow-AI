@@ -24,11 +24,4 @@ def openrouter_server_tools() -> list[dict]:
                 },
             }
         )
-    if settings.datetime_tool_enabled:
-        tools.append(
-            {
-                "type": "openrouter:datetime",
-                "parameters": {"timezone": settings.morrow_timezone},
-            }
-        )
     return tools

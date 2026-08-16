@@ -3,7 +3,9 @@
 import ast
 import math
 import operator
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.core.config import settings
 from src.tools.registry import ToolCapability, tool_registry
@@ -21,6 +23,35 @@ _UNARY_OPS: dict[type[ast.unaryop], Any] = {
     ast.UAdd: operator.pos,
     ast.USub: operator.neg,
 }
+
+
+_WEEKDAYS_ID = (
+    "Senin",
+    "Selasa",
+    "Rabu",
+    "Kamis",
+    "Jumat",
+    "Sabtu",
+    "Minggu",
+)
+
+
+async def current_datetime(timezone: str | None = None) -> dict[str, str]:
+    """Return deterministic current local date/time fields for an IANA timezone."""
+    tz_name = (timezone or settings.morrow_timezone).strip()
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"Timezone IANA tidak valid: {tz_name}") from exc
+    now = datetime.now(tz)
+    return {
+        "timezone": tz_name,
+        "iso": now.isoformat(timespec="seconds"),
+        "date": now.date().isoformat(),
+        "time": now.strftime("%H:%M:%S"),
+        "weekday": _WEEKDAYS_ID[now.weekday()],
+        "utc_offset": now.strftime("%z"),
+    }
 
 
 def _eval_node(node: ast.AST, depth: int = 0) -> int | float:
@@ -57,6 +88,34 @@ async def calculate(expression: str) -> dict[str, int | float | str]:
 
 
 def ensure_builtin_tools_registered() -> None:
+    if settings.datetime_tool_enabled and tool_registry.get_tool("current_datetime") is None:
+        tool_registry.register_tool(
+            "current_datetime",
+            current_datetime,
+            description=(
+                "Ambil tanggal, jam, nama hari, timezone, dan UTC offset saat ini secara deterministik. "
+                "Gunakan hasil field tool apa adanya; jangan menghitung ulang nama hari di model."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "description": "Timezone IANA opsional, contoh Asia/Jakarta. Default mengikuti MORROW_TIMEZONE.",
+                    }
+                },
+                "additionalProperties": False,
+            },
+            domain="utility",
+            capability=ToolCapability.READ,
+            risk="low",
+            side_effect=False,
+            output_trust="trusted_internal",
+            cost_class="local",
+            retry_safe=True,
+            keywords={"waktu", "jam", "tanggal", "hari", "sekarang", "time", "date", "datetime", "timezone"},
+        )
+
     if tool_registry.get_tool("calculate") is None:
         tool_registry.register_tool(
             "calculate",
