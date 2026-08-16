@@ -71,6 +71,13 @@ class AddressingDetector:
         return mentioned
 
     @staticmethod
+    def _work_coordinator(mentioned_roles: list[RoleID]) -> RoleID:
+        """Manager owns operational coordination whenever explicitly included."""
+        if RoleID.MANAGER in mentioned_roles:
+            return RoleID.MANAGER
+        return mentioned_roles[0]
+
+    @staticmethod
     def _result_for_explicit(
         mentioned_roles: list[RoleID],
         intent: MessageIntent,
@@ -92,7 +99,11 @@ class AddressingDetector:
                 intent=intent,
                 allow_multi_response=intent == MessageIntent.SOCIAL,
                 requires_coordinator=intent != MessageIntent.SOCIAL,
-                coordinator=mentioned_roles[0] if intent != MessageIntent.SOCIAL else None,
+                coordinator=(
+                    AddressingDetector._work_coordinator(mentioned_roles)
+                    if intent != MessageIntent.SOCIAL
+                    else None
+                ),
                 confidence=0.99,
             )
         return AddressingResult(
