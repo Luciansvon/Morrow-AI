@@ -11,7 +11,7 @@ from src.core.config import settings
 
 
 class AgentBrowserBackend(BrowserBackend):
-    """Legacy compatibility backend backed by the vercel-labs agent-browser CLI."""
+    """Production local-browser backend backed by the vercel-labs agent-browser CLI."""
 
     _ACTION_CLASS_ORDER: ClassVar[dict[BrowserActionClass, int]] = {
         BrowserActionClass.READ: 0,
@@ -95,7 +95,8 @@ class AgentBrowserBackend(BrowserBackend):
         return await self._run(task_space, "open", url)
 
     async def snapshot(self, *, task_space: str) -> dict[str, Any]:
-        return await self._run(task_space, "snapshot", "-i")
+        # Interactive + compact keeps the model context small while retaining actionable refs.
+        return await self._run(task_space, "snapshot", "-i", "-c")
 
     async def screenshot(self, *, task_space: str) -> dict[str, Any]:
         return await self._run(task_space, "screenshot")
