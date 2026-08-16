@@ -24,7 +24,6 @@ _UNARY_OPS: dict[type[ast.unaryop], Any] = {
     ast.USub: operator.neg,
 }
 
-
 _WEEKDAYS_ID = (
     "Senin",
     "Selasa",
@@ -34,11 +33,24 @@ _WEEKDAYS_ID = (
     "Sabtu",
     "Minggu",
 )
+_TIMEZONE_ALIASES = {
+    "jakarta": "Asia/Jakarta",
+    "jakarta, indonesia": "Asia/Jakarta",
+    "indonesia/jakarta": "Asia/Jakarta",
+    "wib": "Asia/Jakarta",
+    "utc+7": "Asia/Jakarta",
+    "utc+07:00": "Asia/Jakarta",
+}
+
+
+def _normalize_timezone_name(timezone: str | None) -> str:
+    raw = (timezone or settings.morrow_timezone).strip()
+    return _TIMEZONE_ALIASES.get(raw.lower(), raw)
 
 
 async def current_datetime(timezone: str | None = None) -> dict[str, str | int]:
     """Return deterministic current local date/time fields for an IANA timezone."""
-    tz_name = (timezone or settings.morrow_timezone).strip()
+    tz_name = _normalize_timezone_name(timezone)
     try:
         tz = ZoneInfo(tz_name)
     except ZoneInfoNotFoundError as exc:
@@ -95,6 +107,7 @@ def ensure_builtin_tools_registered() -> None:
             current_datetime,
             description=(
                 "Ambil tanggal, jam, nama hari, timezone, dan UTC offset saat ini secara deterministik. "
+                "Timezone umum seperti Jakarta/WIB dinormalisasi ke Asia/Jakarta. "
                 "Gunakan hasil field tool apa adanya; jangan menghitung ulang nama hari di model."
             ),
             parameters={
@@ -102,7 +115,7 @@ def ensure_builtin_tools_registered() -> None:
                 "properties": {
                     "timezone": {
                         "type": "string",
-                        "description": "Timezone IANA opsional, contoh Asia/Jakarta. Default mengikuti MORROW_TIMEZONE.",
+                        "description": "Timezone IANA atau alias umum seperti Jakarta/WIB. Default mengikuti MORROW_TIMEZONE.",
                     }
                 },
                 "additionalProperties": False,
@@ -114,7 +127,7 @@ def ensure_builtin_tools_registered() -> None:
             output_trust="trusted_internal",
             cost_class="local",
             retry_safe=True,
-            keywords={"waktu", "jam", "tanggal", "hari", "sekarang", "time", "date", "datetime", "timezone"},
+            keywords={"waktu", "jam", "tanggal", "hari", "sekarang", "time", "date", "datetime", "timezone", "jakarta", "wib"},
         )
 
     if tool_registry.get_tool("calculate") is None:
