@@ -5,7 +5,9 @@ import re
 from typing import Any
 
 from src.adapters.telegram.bot_registry import bot_registry
+from src.core.conversation import clear_conversation_context, get_conversation_context
 from src.core.types import RoleID
+from src.storage.sqlite import db
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,40 @@ class TelegramSender:
         return await bot.send_message(**kwargs)
 
     @staticmethod
+    async def _persist_conversation_mapping(
+        group_id: str,
+        role: RoleID,
+        sent_chunks: list[tuple[str, str]],
+    ) -> None:
+        context = get_conversation_context()
+        if context is None:
+            return
+        try:
+            for sent_id, chunk in sent_chunks:
+                key = f"telegram:{group_id}:{sent_id}"
+                await db.execute(
+                    """INSERT OR REPLACE INTO conversation_message_map
+                       (platform_message_id, group_id, role_id, thread_id, task_id,
+                        root_user_text, response_text)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        key,
+                        group_id,
+                        role.value,
+                        context.thread_id,
+                        context.task_id,
+                        context.root_user_text,
+                        chunk,
+                    ),
+                )
+        except Exception as exc:
+            # Delivery already succeeded. Continuity metadata is important but must not
+            # turn a delivered Telegram answer into a false send failure.
+            logger.warning("telegram_continuity_persist_failed error=%s", exc.__class__.__name__)
+        finally:
+            clear_conversation_context()
+
+    @staticmethod
     async def send_message(
         group_id: str,
         text: str,
@@ -112,12 +148,15 @@ class TelegramSender:
 
         last_id = ""
         reply_to = reply_to_message_id
+        sent_chunks: list[tuple[str, str]] = []
         for chunk in TelegramSender._chunks(text):
             sent = await TelegramSender._send_one(bot, group_id, chunk, reply_to)
             last_id = str(sent.message_id)
+            sent_chunks.append((last_id, chunk))
             reply_to = last_id
         if not last_id:
             raise RuntimeError("Telegram tidak mengembalikan message_id setelah pengiriman.")
+        await TelegramSender._persist_conversation_mapping(group_id, role, sent_chunks)
         return last_id
 
     @staticmethod
