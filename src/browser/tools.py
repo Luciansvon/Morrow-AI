@@ -8,6 +8,8 @@ from src.browser.provider import get_browser_backend
 from src.core.config import settings
 from src.tools.registry import ToolCapability, tool_registry
 
+__all__ = ["agent_browser_backend"]
+
 
 async def browser_open(url: str, _task_space: str) -> dict[str, Any]:
     return await get_browser_backend().open(url, task_space=_task_space)
