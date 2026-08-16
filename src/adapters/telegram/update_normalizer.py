@@ -22,6 +22,13 @@ class TelegramUpdateNormalizer:
             if reply_from_user and getattr(reply_from_user, "id", None) is not None
             else None
         )
+        reply_text = None
+        if reply_to:
+            reply_text = (
+                getattr(reply_to, "text", "")
+                or getattr(reply_to, "caption", "")
+                or ""
+            ).strip() or None
         chat = getattr(message, "chat", None)
         text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
         return NormalizedMessage(
@@ -33,6 +40,7 @@ class TelegramUpdateNormalizer:
             platform="telegram",
             reply_to_message_id=reply_to_id,
             reply_to_role=reply_to_role,
+            reply_to_text=reply_text,
             received_by_bot_role=received_by_role,
             bot_identity=f"@{username}" if username else received_by_role.value,
         )
