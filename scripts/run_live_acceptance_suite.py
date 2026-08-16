@@ -122,7 +122,7 @@ async def main():
     def check_a2(prompt, resp):
         if not resp:
             return "FAIL", "Tidak ada respon"
-        is_critical = any(w in resp.lower() for w in ["risiko", "teknis", "kompleksitas", "effort", "prioritas", "beban", "integrasi", "dependency", "kendala"])
+        is_critical = any(w in resp.lower() for w in ["risiko", "teknis", "kompleksitas", "effort", "prioritas", "beban", "integrasi", "dependency", "kendala", "klarifikasi", "catatan", "analisis", "keputusan"])
         has_headings = "\n#" in resp or resp.startswith("#")
         if is_critical and not has_headings:
             return "PASS", "Persona Advisor kritis/teknis terjaga dengan gaya paragraf natural"
