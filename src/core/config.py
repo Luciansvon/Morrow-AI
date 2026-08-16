@@ -70,6 +70,7 @@ class Settings(BaseSettings):
 
     browser_enabled: bool = Field(default=False, alias="BROWSER_ENABLED")
     browser_backend: str = Field(default="agent-browser", alias="BROWSER_BACKEND")
+    browser_ego_executable: str = Field(default="ego-browser", alias="BROWSER_EGO_EXECUTABLE")
     browser_agent_executable: str = Field(default="agent-browser", alias="BROWSER_AGENT_EXECUTABLE")
     browser_timeout_seconds: float = Field(default=45.0, gt=0, alias="BROWSER_TIMEOUT_SECONDS")
     browser_headed: bool = Field(default=False, alias="BROWSER_HEADED")

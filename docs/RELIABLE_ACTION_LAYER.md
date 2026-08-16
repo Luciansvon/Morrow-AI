@@ -30,7 +30,7 @@ Repeated identical external calls inside one agent run reuse the same pending ap
 
 ## Browser backend
 
-`src/browser/base.py` remains provider-neutral. v0.2.5 adds an opt-in `AgentBrowserBackend` using the `agent-browser` CLI. Task/thread ownership becomes an isolated browser session name; `_task_space` is injected by Morrow and is not model-controlled.
+`src/browser/base.py` remains provider-neutral. The preferred provider is now `EgoLiteBackend`, which uses Ego Lite's official `ego-browser nodejs` bridge and maps each Morrow task/thread to an isolated Ego Lite Space. `_task_space` is injected by Morrow and is never model-controlled. The older `AgentBrowserBackend` remains a compatibility fallback rather than the primary implementation.
 
 Initial tools:
 
@@ -43,24 +43,23 @@ Initial tools:
 | `browser_type` | PREPARE | no |
 | `browser_click` | COMMIT | required |
 
-`click` is deliberately conservative because a click can submit, purchase, send, delete, or trigger another external mutation. The backend launches the CLI through argument-vector subprocess execution rather than a shell string.
+`click` remains deliberately conservative because a click can submit, purchase, send, delete, or trigger another external mutation. Provider capability never bypasses Morrow's policy or approval gateway.
+
+The Ego Lite adapter uses official helpers such as `useOrCreateTaskSpace`, `openOrReuseTab`, `snapshotText`, `captureScreenshot`, `fillInput`, and `click` through the `ego-browser nodejs` runtime rather than reimplementing browser automation.
 
 ### Enable browser automation
 
-```bash
-npm install -g agent-browser
-agent-browser install
-```
-
-Then:
+After Ego Lite and its `ego-browser` command are installed and onboarded:
 
 ```env
 BROWSER_ENABLED=true
-BROWSER_BACKEND=agent-browser
-BROWSER_AGENT_EXECUTABLE=agent-browser
+BROWSER_BACKEND=ego-lite
+BROWSER_EGO_EXECUTABLE=ego-browser
 ```
 
-Browser automation stays disabled by default so upgrading Morrow does not silently add a new system dependency.
+Ego Lite currently documents macOS as its supported platform, with Windows/Linux on its roadmap. Morrow does not pretend an unavailable runtime exists: if `ego-browser` cannot be found, the provider fails closed with `BrowserBackendUnavailableError`. Browser automation remains disabled by default.
+
+For compatibility-only use, `BROWSER_BACKEND=agent-browser` and `BROWSER_AGENT_EXECUTABLE=agent-browser` remain supported.
 
 ## Retry semantics
 

@@ -1,7 +1,9 @@
 """Memory Judge menyimpan fakta/keputusan eksplisit dari exchange, bukan spekulasi agent."""
 
+import hashlib
 import json
-from typing import Any
+import re
+from typing import Any, ClassVar
 
 from src.core.config import settings
 from src.core.types import MemoryScope, MemoryType, RoleID
@@ -19,6 +21,73 @@ Output JSON ketat:
 
 
 class MemoryJudge:
+    """Judge for implicit memory plus deterministic handling for explicit save commands."""
+
+    _EXPLICIT_MEMORY_RE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)\b"
+        r"(?:\s+ini)?(?:\s+sebagai\s+"
+        r"(keputusan|decision|constraint|batasan|fakta|fact|status))?\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _TYPE_MAP: ClassVar[dict[str, MemoryType]] = {
+        "keputusan": MemoryType.DECISION,
+        "decision": MemoryType.DECISION,
+        "constraint": MemoryType.CONSTRAINT,
+        "batasan": MemoryType.CONSTRAINT,
+        "status": MemoryType.STATUS,
+        "fakta": MemoryType.FACT,
+        "fact": MemoryType.FACT,
+    }
+
+    @classmethod
+    def parse_explicit_directive(cls, text: str) -> dict[str, Any] | None:
+        """Parse explicit `catat sebagai keputusan: ...` without asking an LLM to infer intent."""
+        match = cls._EXPLICIT_MEMORY_RE.search(text.strip())
+        if not match:
+            return None
+        _, raw_type, raw_value = match.groups()
+        value = raw_value.strip()
+        if not value:
+            return None
+        memory_type = cls._TYPE_MAP.get((raw_type or "fakta").lower(), MemoryType.FACT)
+        tokens = re.findall(r"[a-z0-9]+", value.lower())[:8]
+        slug = "_".join(tokens)[:70] or memory_type.value
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:10]
+        key = f"explicit_{memory_type.value}_{slug}_{digest}"[:120]
+        return {"key": key, "value": value, "memory_type": memory_type}
+
+    @classmethod
+    async def commit_explicit_directive(
+        cls,
+        text: str,
+        *,
+        actor_id: str,
+        role_id: RoleID | None,
+        group_id: str,
+    ) -> dict[str, Any] | None:
+        """Persist an explicit user memory command and return only after durable write succeeds."""
+        parsed = cls.parse_explicit_directive(text)
+        if not parsed:
+            return None
+        item = await memory_service.set_memory(
+            scope=MemoryScope.SHARED,
+            key=parsed["key"],
+            value=parsed["value"],
+            changed_by_actor=actor_id,
+            changed_by_role=role_id,
+            reason="Explicit user memory command",
+            memory_type=parsed["memory_type"],
+            group_id=group_id,
+        )
+        return {
+            "verified": True,
+            "id": item.id,
+            "key": item.key,
+            "value": item.value,
+            "memory_type": item.memory_type.value,
+            "scope": item.scope.value,
+        }
+
     @staticmethod
     async def evaluate_and_commit(
         text: str | None = None,
@@ -55,11 +124,14 @@ class MemoryJudge:
             )
             data = json.loads(res.content)
             if not data.get("should_store"):
+                data["stored_count"] = 0
+                data["stored_items"] = []
                 return data
             items = data.get("items") or []
             # compatibility dengan shape lama
             if not items and data.get("key") and data.get("value"):
                 items = [data]
+            stored_items: list[dict[str, Any]] = []
             for item in items[:5]:
                 if not item.get("key") or not item.get("value"):
                     continue
@@ -70,7 +142,7 @@ class MemoryJudge:
                     mem_type = MemoryType(item.get("memory_type", "fact"))
                 except ValueError:
                     mem_type = MemoryType.FACT
-                await memory_service.set_memory(
+                stored = await memory_service.set_memory(
                     scope=scope,
                     key=str(item["key"])[:120],
                     value=str(item["value"])[:4000],
@@ -81,6 +153,17 @@ class MemoryJudge:
                     memory_type=mem_type,
                     group_id=group_id,
                 )
+                stored_items.append(
+                    {
+                        "id": stored.id,
+                        "key": stored.key,
+                        "value": stored.value,
+                        "scope": stored.scope.value,
+                        "memory_type": stored.memory_type.value,
+                    }
+                )
+            data["stored_count"] = len(stored_items)
+            data["stored_items"] = stored_items
             return data
         except (json.JSONDecodeError, ValueError, TypeError):
             return None

@@ -2,26 +2,27 @@
 
 from typing import Any
 
-from src.browser.agent_browser import agent_browser_backend
+from src.browser.agent_browser import agent_browser_backend  # compatibility test/legacy hook
 from src.browser.base import BrowserActionClass
+from src.browser.provider import get_browser_backend
 from src.core.config import settings
 from src.tools.registry import ToolCapability, tool_registry
 
 
 async def browser_open(url: str, _task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.open(url, task_space=_task_space)
+    return await get_browser_backend().open(url, task_space=_task_space)
 
 
 async def browser_snapshot(_task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.snapshot(task_space=_task_space)
+    return await get_browser_backend().snapshot(task_space=_task_space)
 
 
 async def browser_screenshot(_task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.screenshot(task_space=_task_space)
+    return await get_browser_backend().screenshot(task_space=_task_space)
 
 
 async def browser_fill(target: str, value: str, _task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.interact(
+    return await get_browser_backend().interact(
         "fill",
         {"target": target, "value": value},
         task_space=_task_space,
@@ -30,7 +31,7 @@ async def browser_fill(target: str, value: str, _task_space: str) -> dict[str, A
 
 
 async def browser_type(target: str, value: str, _task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.interact(
+    return await get_browser_backend().interact(
         "type",
         {"target": target, "value": value},
         task_space=_task_space,
@@ -39,7 +40,7 @@ async def browser_type(target: str, value: str, _task_space: str) -> dict[str, A
 
 
 async def browser_click(target: str, _task_space: str) -> dict[str, Any]:
-    return await agent_browser_backend.interact(
+    return await get_browser_backend().interact(
         "click",
         {"target": target},
         task_space=_task_space,
