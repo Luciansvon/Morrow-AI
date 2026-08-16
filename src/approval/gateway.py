@@ -15,11 +15,29 @@ from src.tools.policy import tool_policy
 
 class ApprovalGateway:
     @staticmethod
+    async def _bind_browser_state(
+        action_type: str,
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Bind browser COMMIT approvals to the semantic page/form state at request time."""
+        normalized = dict(parameters)
+        if action_type not in {"browser_click", "browser_press"}:
+            return normalized
+        task_space = str(normalized.get("_task_space") or "").strip()
+        if not task_space:
+            raise ValueError("Browser COMMIT approval membutuhkan task-space terisolasi.")
+        from src.browser.tools import browser_state_fingerprint
+
+        normalized["_state_hash"] = await browser_state_fingerprint(task_space)
+        return normalized
+
+    @staticmethod
     async def create_request(group_id: str, action_type: str, parameters: dict[str, Any], requested_by: RoleID, duration_minutes: int = 15) -> ApprovalRequest:
         if tool_policy.classify(action_type) != "external":
             raise ValueError(f"Approval hanya boleh dibuat untuk aksi eksternal terklasifikasi: {action_type}")
         if duration_minutes <= 0:
             raise ValueError("Durasi approval harus lebih dari 0 menit.")
+        parameters = await ApprovalGateway._bind_browser_state(action_type, parameters)
         approval_id = f"appr_{uuid.uuid4().hex[:12]}"
         param_hash = fingerprinter.generate_hash(action_type, parameters)
         idempotency_key = f"idem_{uuid.uuid4().hex[:16]}"
