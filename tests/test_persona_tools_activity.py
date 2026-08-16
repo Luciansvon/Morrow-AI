@@ -117,7 +117,16 @@ async def test_current_datetime_weekday_is_consistent_with_date():
     weekday_id = ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
     parsed = date.fromisoformat(result["date"])
     assert result["weekday"] == weekday_id[parsed.weekday()]
+    assert result["weekday_index"] == parsed.weekday()
     assert result["timezone"] == "Asia/Jakarta"
+    assert "iso" in result
+    assert "time" in result
+    assert "utc_offset" in result
+
+    # Invariant: 2026-08-16 is Sunday / Minggu with index 6
+    test_date = date(2026, 8, 16)
+    assert weekday_id[test_date.weekday()] == "Minggu"
+    assert test_date.weekday() == 6
 
 
 @pytest.mark.asyncio

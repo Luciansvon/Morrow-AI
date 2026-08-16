@@ -111,3 +111,62 @@ async def test_repeated_identical_browser_failure_stops_before_max_tool_rounds(m
     )
     assert "tidak akan mengulangnya tanpa informasi baru" in result
     assert calls["llm"] == 2
+
+
+def test_explicit_memory_parser_positive_and_negative_grammar():
+    from src.core.types import MemoryType
+    from src.memory.judge import MemoryJudge
+
+    # Positive tests - command variations
+    res1 = MemoryJudge.parse_explicit_directive("catat sebagai keputusan: browser Morrow tetap provider-neutral")
+    assert res1 is not None
+    assert res1["memory_type"] == MemoryType.DECISION
+    assert res1["value"] == "browser Morrow tetap provider-neutral"
+
+    res2 = MemoryJudge.parse_explicit_directive("catat sebagai keputusan browser Morrow tetap provider-neutral")
+    assert res2 is not None
+    assert res2["memory_type"] == MemoryType.DECISION
+
+    res3 = MemoryJudge.parse_explicit_directive("ingat sebagai keputusan: approval COMMIT wajib")
+    assert res3 is not None
+    assert res3["memory_type"] == MemoryType.DECISION
+
+    res4 = MemoryJudge.parse_explicit_directive("ingat sebagai keputusan approval COMMIT wajib")
+    assert res4 is not None
+    assert res4["memory_type"] == MemoryType.DECISION
+
+    res5 = MemoryJudge.parse_explicit_directive("Manager, catat bahwa approval COMMIT wajib")
+    assert res5 is not None
+    assert res5["memory_type"] == MemoryType.FACT
+    assert res5["value"] == "approval COMMIT wajib"
+
+    res6 = MemoryJudge.parse_explicit_directive("ingat bahwa browser utama Morrow provider-neutral")
+    assert res6 is not None
+    assert res6["memory_type"] == MemoryType.FACT
+
+    res7 = MemoryJudge.parse_explicit_directive("catat fakta: jam operasional sampai jam 5")
+    assert res7 is not None
+    assert res7["memory_type"] == MemoryType.FACT
+    assert res7["value"] == "jam operasional sampai jam 5"
+
+    res8 = MemoryJudge.parse_explicit_directive("ingat fakta: target pasar luar negeri")
+    assert res8 is not None
+    assert res8["memory_type"] == MemoryType.FACT
+
+    res9 = MemoryJudge.parse_explicit_directive("Tolong simpan sebagai batasan: jangan pakai cloud eksternal")
+    assert res9 is not None
+    assert res9["memory_type"] == MemoryType.CONSTRAINT
+    assert res9["value"] == "jangan pakai cloud eksternal"
+
+    res10 = MemoryJudge.parse_explicit_directive("catat sebagai status: server sedang migrasi")
+    assert res10 is not None
+    assert res10["memory_type"] == MemoryType.STATUS
+
+    # Negative tests - should NOT be parsed as explicit directive
+    assert MemoryJudge.parse_explicit_directive("dia tadi bilang 'ingat bahwa X'") is None
+    assert MemoryJudge.parse_explicit_directive("apakah lu ingat bahwa kita pernah bahas ini?") is None
+    assert MemoryJudge.parse_explicit_directive("kemarin gua ingat bahwa ada bug") is None
+    assert MemoryJudge.parse_explicit_directive("gantungan kunci kayu ini mengingatkan gua pada jepara") is None
+    assert MemoryJudge.parse_explicit_directive("jangan catat apapun ya") is None
+    assert MemoryJudge.parse_explicit_directive("") is None
+

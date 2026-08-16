@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     morrow_timezone: str = Field(default="Asia/Jakarta", alias="MORROW_TIMEZONE")
 
     browser_enabled: bool = Field(default=False, alias="BROWSER_ENABLED")
-    browser_backend: str = Field(default="agent-browser", alias="BROWSER_BACKEND")
+    browser_backend: str = Field(default="ego-lite", alias="BROWSER_BACKEND")
     browser_ego_executable: str = Field(default="ego-browser", alias="BROWSER_EGO_EXECUTABLE")
     browser_agent_executable: str = Field(default="agent-browser", alias="BROWSER_AGENT_EXECUTABLE")
     browser_timeout_seconds: float = Field(default=45.0, gt=0, alias="BROWSER_TIMEOUT_SECONDS")

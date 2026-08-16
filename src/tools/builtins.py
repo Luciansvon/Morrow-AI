@@ -36,7 +36,7 @@ _WEEKDAYS_ID = (
 )
 
 
-async def current_datetime(timezone: str | None = None) -> dict[str, str]:
+async def current_datetime(timezone: str | None = None) -> dict[str, str | int]:
     """Return deterministic current local date/time fields for an IANA timezone."""
     tz_name = (timezone or settings.morrow_timezone).strip()
     try:
@@ -50,6 +50,7 @@ async def current_datetime(timezone: str | None = None) -> dict[str, str]:
         "date": now.date().isoformat(),
         "time": now.strftime("%H:%M:%S"),
         "weekday": _WEEKDAYS_ID[now.weekday()],
+        "weekday_index": now.weekday(),
         "utc_offset": now.strftime("%z"),
     }
 

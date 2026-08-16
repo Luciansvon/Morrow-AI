@@ -317,11 +317,12 @@ async def test_browser_task_space_cannot_be_injected_by_model(monkeypatch):
     ensure_builtin_tools_registered()
     calls = {"llm": 0, "task_space_used": []}
 
-    async def fake_interact(action, parameters, *, task_space, action_class):
-        calls["task_space_used"].append(task_space)
-        return {"success": True}
+    class MockBackend:
+        async def interact(self, action, parameters, *, task_space, action_class):
+            calls["task_space_used"].append(task_space)
+            return {"success": True}
 
-    monkeypatch.setattr("src.browser.tools.agent_browser_backend.interact", fake_interact)
+    monkeypatch.setattr("src.browser.tools.get_browser_backend", lambda: MockBackend())
 
     async def fake_chat_completion(*, messages, tools=None, **kwargs):
         calls["llm"] += 1

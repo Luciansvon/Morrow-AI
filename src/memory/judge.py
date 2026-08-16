@@ -23,11 +23,11 @@ Output JSON ketat:
 class MemoryJudge:
     """Judge for implicit memory plus deterministic handling for explicit save commands."""
 
-    _EXPLICIT_MEMORY_RE: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b(catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)\b"
-        r"(?:\s+ini)?(?:\s+sebagai\s+"
-        r"(keputusan|decision|constraint|batasan|fakta|fact|status))?\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.DOTALL,
+    _PREFIX_RE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:(?:halo|hai|pagi|siang|sore|malam)\b[\s,:-]*)?"
+        r"(?:(?:manager|marketing|advisor|tim|team|bot|morrow)\b[\s,:-]*)?"
+        r"(?:(?:tolong|mohon|bantu|coba)\b[\s,:-]*)?",
+        re.IGNORECASE,
     )
     _TYPE_MAP: ClassVar[dict[str, MemoryType]] = {
         "keputusan": MemoryType.DECISION,
@@ -38,23 +38,72 @@ class MemoryJudge:
         "fakta": MemoryType.FACT,
         "fact": MemoryType.FACT,
     }
+    _EXPLICIT_COMMANDS: ClassVar[list[tuple[re.Pattern[str], MemoryType | None]]] = [
+        (
+            re.compile(
+                r"^(?:catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)"
+                r"(?:\s+ini)?\s+sebagai\s+"
+                r"(keputusan|decision|constraint|batasan|status|fakta|fact)"
+                r"(?:\s*:\s*|\s+bahwa\s+|\s+)(.+)$",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            None,
+        ),
+        (
+            re.compile(
+                r"^(?:catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)\s+"
+                r"(keputusan|decision|constraint|batasan|status|fakta|fact)\s*:\s*(.+)$",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            None,
+        ),
+        (
+            re.compile(
+                r"^(?:catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)\s+bahwa\s+(.+)$",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            MemoryType.FACT,
+        ),
+        (
+            re.compile(
+                r"^(?:catat(?:kan)?|catet|ingat(?:kan)?|inget|simpan(?:kan)?)(?:\s+ini)?\s*:\s*(.+)$",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            MemoryType.FACT,
+        ),
+    ]
 
     @classmethod
     def parse_explicit_directive(cls, text: str) -> dict[str, Any] | None:
-        """Parse explicit `catat sebagai keputusan: ...` without asking an LLM to infer intent."""
-        match = cls._EXPLICIT_MEMORY_RE.search(text.strip())
-        if not match:
+        """Parse explicit user memory command anchored near the message beginning."""
+        stripped = text.strip()
+        if not stripped:
             return None
-        _, raw_type, raw_value = match.groups()
-        value = raw_value.strip()
-        if not value:
+        core = cls._PREFIX_RE.sub("", stripped).strip()
+        if not core:
             return None
-        memory_type = cls._TYPE_MAP.get((raw_type or "fakta").lower(), MemoryType.FACT)
-        tokens = re.findall(r"[a-z0-9]+", value.lower())[:8]
-        slug = "_".join(tokens)[:70] or memory_type.value
-        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:10]
-        key = f"explicit_{memory_type.value}_{slug}_{digest}"[:120]
-        return {"key": key, "value": value, "memory_type": memory_type}
+
+        for pattern, fixed_type in cls._EXPLICIT_COMMANDS:
+            match = pattern.match(core)
+            if not match:
+                continue
+            if fixed_type is not None:
+                raw_type = "fakta"
+                raw_value = match.group(1).strip()
+                memory_type = fixed_type
+            else:
+                raw_type = match.group(1).strip()
+                raw_value = match.group(2).strip()
+                memory_type = cls._TYPE_MAP.get(raw_type.lower(), MemoryType.FACT)
+
+            if not raw_value:
+                return None
+            tokens = re.findall(r"[a-z0-9]+", raw_value.lower())[:8]
+            slug = "_".join(tokens)[:70] or memory_type.value
+            digest = hashlib.sha256(raw_value.encode("utf-8")).hexdigest()[:10]
+            key = f"explicit_{memory_type.value}_{slug}_{digest}"[:120]
+            return {"key": key, "value": raw_value, "memory_type": memory_type}
+        return None
 
     @classmethod
     async def commit_explicit_directive(
