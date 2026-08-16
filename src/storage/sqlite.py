@@ -106,12 +106,6 @@ class DatabaseManager:
             "approvals": [("execution_error", "TEXT")],
             "processed_events": [("group_id", "TEXT")],
             "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")],
-            "message_agent_map": [
-                ("thread_id", "TEXT"),
-                ("task_id", "TEXT"),
-                ("root_user_text", "TEXT"),
-                ("response_text", "TEXT"),
-            ],
         }
         for table, additions in migrations.items():
             if not await self._table_exists(table):
