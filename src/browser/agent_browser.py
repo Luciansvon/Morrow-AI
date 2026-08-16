@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -76,34 +77,73 @@ class AgentBrowserBackend(BrowserBackend):
             return [comspec, "/d", "/s", "/c", subprocess.list2cmdline(base)]
         return base
 
+    def _run_sync_windows(self, argv: list[str]) -> tuple[int, str, str]:
+        # On Windows, agent-browser spawns a background daemon for session persistence.
+        # Anonymous pipes created by asyncio/Popen can be inherited by the daemon,
+        # preventing communicate() from closing. Using temporary files with close_fds=True
+        # decouples pipe inheritance and allows instant return.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+            out_file = Path(tmpdir) / "stdout.json"
+            err_file = Path(tmpdir) / "stderr.txt"
+            with open(out_file, "w", encoding="utf-8") as f_out, open(err_file, "w", encoding="utf-8") as f_err:
+                try:
+                    proc = subprocess.Popen(
+                        argv,
+                        stdout=f_out,
+                        stderr=f_err,
+                        close_fds=True,
+                    )
+                except FileNotFoundError as exc:
+                    raise BrowserBackendUnavailableError(
+                        f"Browser backend '{self.executable}' tidak ditemukan. "
+                        "Install agent-browser lalu aktifkan BROWSER_ENABLED."
+                    ) from exc
+                try:
+                    proc.wait(timeout=self.timeout_seconds)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    raise TimeoutError("Browser action melewati batas waktu.") from None
+
+            with open(out_file, "r", encoding="utf-8", errors="replace") as f_out:
+                stdout_text = f_out.read().strip()
+            with open(err_file, "r", encoding="utf-8", errors="replace") as f_err:
+                stderr_text = f_err.read().strip()
+            return proc.returncode, stdout_text, stderr_text
+
     async def _run(self, task_space: str, *command: str) -> dict[str, Any]:
         argv = self._command_argv(task_space, *command)
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError as exc:
-            raise BrowserBackendUnavailableError(
-                f"Browser backend '{self.executable}' tidak ditemukan. "
-                "Install agent-browser lalu aktifkan BROWSER_ENABLED."
-            ) from exc
+        if os.name == "nt":
+            returncode, out, err = await asyncio.to_thread(self._run_sync_windows, argv)
+        else:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except FileNotFoundError as exc:
+                raise BrowserBackendUnavailableError(
+                    f"Browser backend '{self.executable}' tidak ditemukan. "
+                    "Install agent-browser lalu aktifkan BROWSER_ENABLED."
+                ) from exc
 
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=self.timeout_seconds,
-            )
-        except TimeoutError:
-            process.kill()
-            await process.communicate()
-            raise TimeoutError("Browser action melewati batas waktu.") from None
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=self.timeout_seconds,
+                )
+            except TimeoutError:
+                process.kill()
+                await process.communicate()
+                raise TimeoutError("Browser action melewati batas waktu.") from None
 
-        out = stdout.decode("utf-8", errors="replace").strip()
-        err = stderr.decode("utf-8", errors="replace").strip()
-        if process.returncode != 0:
-            raise RuntimeError(err or out or f"agent-browser keluar dengan kode {process.returncode}")
+            returncode = process.returncode
+            out = stdout.decode("utf-8", errors="replace").strip()
+            err = stderr.decode("utf-8", errors="replace").strip()
+
+        if returncode != 0:
+            raise RuntimeError(err or out or f"agent-browser keluar dengan kode {returncode}")
 
         if not out:
             return {"success": True}
