@@ -61,9 +61,9 @@ Router skill:
 
 Detail katalog dan aturan authoring ada di [`skills/README.md`](skills/README.md).
 
-### 3. 🔎 Agent Tool Runtime
+### 3. 🔎 Agent Tool Runtime & Browser Automation
 
-Morrow v0.2.4 menghubungkan agent runtime ke tool layer secara nyata. Tool dibagi berdasarkan siapa yang mengeksekusi dan apakah ada side effect.
+Morrow menghubungkan agent runtime ke tool layer secara nyata. Tool dibagi berdasarkan siapa yang mengeksekusi dan apakah ada side effect.
 
 | Capability | Implementasi | Approval |
 |---|---|---|
@@ -72,18 +72,18 @@ Morrow v0.2.4 menghubungkan agent runtime ke tool layer secara nyata. Tool dibag
 | Current datetime | OpenRouter server tool `openrouter:datetime` | Tidak |
 | Calculator | Local user-defined tool `calculate` dengan AST evaluator, tanpa `eval()` | Tidak |
 | File/document inspection | Pipeline native parser/OCR/vision yang sudah ada | Tidak |
-| Browser automation | Provider-neutral contract di `src/browser/` | READ/PREPARE tidak; COMMIT wajib approval |
+| Browser automation | Provider-neutral contract di `src/browser/` (`agent-browser`) | READ/PREPARE tidak; COMMIT wajib approval |
 | Email/calendar/social/transaction | External-action tool policy | Wajib approval |
 
 OpenRouter server tools dijalankan server-side dan model dapat memutuskan sendiri kapan perlu search/fetch/time. User-defined local tools memakai bounded tool loop di `AgentRuntime`, dieksekusi lewat `tool_executor`, dan tetap tunduk pada fail-closed `tool_policy`.
 
-Browser automation sengaja dibuat **backend-agnostic**. Konsep task-space/ownership mengambil inspirasi dari [citrolabs/ego-lite](https://github.com/citrolabs/ego-lite), tetapi Morrow tidak bergantung keras pada Ego Lite karena backend harus dapat diganti dan deployment Windows tetap menjadi target utama.
+Browser automation menggunakan runtime `agent-browser` (Chromium-based) dengan isolasi *task-space* per sesi, fail-closed startup preflight, dan pemisahan pipa proses subprocess yang stabil di Windows/Linux/macOS.
 
-Browser action dibagi menjadi:
+11 browser capabilities diklasifikasikan secara ketat:
 
-- `READ`: inspect/navigate/snapshot/screenshot, tanpa external mutation;
-- `PREPARE`: mengubah state lokal halaman seperti mengisi draft;
-- `COMMIT`: submit, send, post, purchase, delete, atau mutasi eksternal lain dan **wajib melewati approval gateway**.
+- **`READ`** (`browser_open`, `browser_snapshot`, `browser_screenshot`): membaca atau mengambil snapshot struktur halaman web tanpa mutasi eksternal (tidak memerlukan approval).
+- **`PREPARE`** (`browser_fill`, `browser_type`, `browser_select`, `browser_check`, `browser_uncheck`, `browser_scroll`): memodifikasi state lokal formulir/halaman secara persisten dalam task-space terisolasi (tidak memerlukan approval).
+- **`COMMIT`** (`browser_click`, `browser_press`): menekan tombol atau aksi pengiriman formulir yang dapat memicu side effect eksternal (**wajib melewati approval gateway**). Approval terikat sidik jari (*state hash*) halaman saat dibuat; jika isi formulir berubah sebelum persetujuan, approval lama otomatis digugurkan demi keamanan (*stale state invalidation*).
 
 ### 4. 🧠 Hybrid Long-Term Memory yang Hemat RAM
 
@@ -249,7 +249,8 @@ Server tools OpenRouter dapat dinyalakan/dimatikan melalui environment tanpa reg
 
 - Python 3.11+
 - Git
-- Node.js + npm, hanya untuk PM2 process manager
+- Node.js + npm (untuk PM2 process manager & runtime `agent-browser`)
+- Google Chrome (untuk browser automation backend)
 
 ### 2. Clone & install
 
@@ -257,7 +258,7 @@ Server tools OpenRouter dapat dinyalakan/dimatikan melalui environment tanpa reg
 git clone https://github.com/Luciansvon/Morrow-AI.git
 cd Morrow-AI
 python -m pip install -e ".[dev]"
-npm install -g pm2
+npm install -g pm2 agent-browser
 ```
 
 Install editable membuat command **`MORROW`** tersedia di terminal. Untuk runtime tanpa tool development, gunakan `python -m pip install -e .`.
@@ -277,6 +278,11 @@ WEB_SEARCH_ENABLED=true
 WEB_FETCH_ENABLED=true
 DATETIME_TOOL_ENABLED=true
 MORROW_TIMEZONE=Asia/Jakarta
+
+# Browser Automation (agent-browser)
+BROWSER_ENABLED=true
+BROWSER_BACKEND=agent-browser
+BROWSER_AGENT_EXECUTABLE=agent-browser
 
 TELEGRAM_MANAGER_BOT_TOKEN=your_manager_bot_token
 TELEGRAM_MARKETING_BOT_TOKEN=your_marketing_bot_token
@@ -352,12 +358,13 @@ Startup normal menginisialisasi database serta long-term memory indexes/mirror s
 | `Manager, wkwk lu kocak` | Manager persona runtime dalam mode casual |
 | `Manager, prioritaskan backlog ini` | Manager + `prioritization_triage` |
 | `Marketing, cari tren campaign terbaru` | Marketing + `market_research` + web search bila model menilai perlu |
+| `Manager, buka https://example.com lalu rangkum isinya` | Manager + live browser automation (`agent-browser` READ) |
 | `cek isi URL ini` | web fetch bila URL perlu dibaca langsung |
 | `hitung (12500 * 3) + 4500` | local calculator tool |
 | `Advisor, buat pre-mortem rencana ini` | Advisor + `risk_premortem` |
 | `cek asumsi di dokumen ini` + PDF | Role owner + `document_inspection` + `assumption_audit` bila trigger cocok |
 | `semua, bantu strategi launch` | bounded multi-agent collaboration dengan coordinator |
-| `/approve appr_12345` | approval gateway untuk action eksternal yang sudah diproposalkan |
+| `/approve appr_12345` | approval gateway untuk action eksternal / browser COMMIT yang diajukan |
 
 ---
 
