@@ -1,6 +1,7 @@
 """Agent runtime: scoped context, persona, progressive tools, workload/risk awareness."""
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -10,7 +11,7 @@ from src.core.types import ModalityType, NormalizedMessage, RiskLevel, RoleID, W
 from src.llm.model_policy import model_policy
 from src.llm.openrouter import openrouter_client
 from src.memory.service import memory_service
-from src.persona.profiles import RESPONSE_STYLE_RULES, persona_context
+from src.persona.profiles import RESPONSE_STYLE_RULES, persona_context, persona_metadata
 from src.skills.router import skill_router
 from src.tasks.service import task_service
 from src.tools.builtins import ensure_builtin_tools_registered
@@ -18,6 +19,8 @@ from src.tools.executor import tool_executor
 from src.tools.policy import tool_policy
 from src.tools.registry import tool_registry
 from src.tools.server import openrouter_server_tools
+
+logger = logging.getLogger(__name__)
 
 BACKEND_GUARDRAILS = """
 ## ATURAN EKSEKUSI BACKEND
@@ -199,7 +202,7 @@ class AgentRuntime:
 
         system_content = f"""{self.base_prompt}
 
-{persona_context(self.role, workload)}
+{persona_context(self.role, workload, risk_level)}
 
 {BACKEND_GUARDRAILS}
 
@@ -263,6 +266,18 @@ class AgentRuntime:
     async def execute(self, message: NormalizedMessage, workload: WorkloadType = WorkloadType.ROUTINE, risk_level: RiskLevel = RiskLevel.LOW, handoff_payload: dict[str, Any] | None = None, task_id: str | None = None, thread_id: str | None = None) -> str:
         context = await self.assemble_context(message, handoff_payload, workload, risk_level, task_id=task_id)
         model_id, reasoning_effort = model_policy.resolve(role=self.role, workload=workload, risk_level=risk_level, modality=ModalityType.TEXT)
+        persona_info = persona_metadata(self.role)
+        logger.info(
+            "agent_invocation role=%s persona_id=%s persona_version=%s model=%s workload=%s risk=%s task_id=%s thread_id=%s",
+            self.role.value,
+            persona_info["persona_id"],
+            persona_info["persona_version"],
+            model_id,
+            workload.value,
+            risk_level.value,
+            task_id,
+            thread_id,
+        )
         ensure_builtin_tools_registered()
         discovered_names = self._auto_discover(message.text)
         last_content = ""
