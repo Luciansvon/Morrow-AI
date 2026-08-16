@@ -115,12 +115,30 @@ class NormalizedMessage(BaseModel):
     platform: str = "telegram"
     reply_to_message_id: str | None = None
     reply_to_role: RoleID | None = None
+    reply_to_text: str | None = None
+    conversation_thread_id: str | None = None
+    conversation_task_id: str | None = None
+    conversation_root_text: str | None = None
     received_by_bot_role: RoleID | None = None
     bot_identity: str | None = None
     attachments: list[AttachmentInfo] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=utc_now)
     raw_event: dict[str, Any] | None = None
     event_claimed: bool = False
+
+    def contextual_text(self) -> str:
+        """Return bounded semantic conversation text without mutating the user's current message."""
+        current = (self.text or "").strip()
+        root = (self.conversation_root_text or "").strip()
+        replied = (self.reply_to_text or "").strip()
+        parts: list[str] = []
+        if root and root != current:
+            parts.append(f"Instruksi awal pengguna:\n{root}")
+        if replied and replied not in {root, current}:
+            parts.append(f"Pesan yang sedang dibalas:\n{replied}")
+        if current:
+            parts.append(f"Pesan pengguna sekarang:\n{current}" if parts else current)
+        return "\n\n".join(parts)
 
 
 class TaskModel(BaseModel):
