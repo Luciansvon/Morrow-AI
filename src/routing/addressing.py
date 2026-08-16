@@ -71,6 +71,33 @@ class AddressingDetector:
         return mentioned
 
     @staticmethod
+    async def _restore_reply_context(message: NormalizedMessage) -> None:
+        """Enrich a Telegram reply with the original thread/root request before routing."""
+        if not message.reply_to_message_id:
+            return
+        canonical = f"{message.platform}:{message.group_id}:{message.reply_to_message_id}"
+        row = await db.fetch_one(
+            """SELECT originating_role_id, thread_id, task_id, root_user_text, response_text
+               FROM message_agent_map WHERE platform_message_id=?""",
+            (canonical,),
+        )
+        if not row:
+            row = await db.fetch_one(
+                """SELECT originating_role_id, thread_id, task_id, root_user_text, response_text
+                   FROM message_agent_map WHERE platform_message_id=? AND group_id=?""",
+                (message.reply_to_message_id, message.group_id),
+            )
+        if not row:
+            return
+        if message.reply_to_role is None and row.get("originating_role_id"):
+            message.reply_to_role = RoleID(row["originating_role_id"])
+        message.conversation_thread_id = row.get("thread_id") or message.conversation_thread_id
+        message.conversation_task_id = row.get("task_id") or message.conversation_task_id
+        message.conversation_root_text = row.get("root_user_text") or message.conversation_root_text
+        if not message.reply_to_text:
+            message.reply_to_text = row.get("response_text") or None
+
+    @staticmethod
     def _work_coordinator(mentioned_roles: list[RoleID]) -> RoleID:
         """Manager owns operational coordination whenever explicitly included."""
         if RoleID.MANAGER in mentioned_roles:
@@ -118,6 +145,7 @@ class AddressingDetector:
 
     @classmethod
     async def detect(cls, message: NormalizedMessage) -> AddressingResult:
+        await cls._restore_reply_context(message)
         text_lower = message.text.strip().lower()
         intent = intent_detector.detect_intent(message.text)
 
