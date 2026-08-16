@@ -11,6 +11,7 @@ if hasattr(sys.stderr, "reconfigure"):
 from src import __version__
 from src.adapters.cli import CLIAdapter
 from src.adapters.telegram import TelegramMultiBotAdapter
+from src.browser.provider import browser_backend_availability, validate_browser_runtime
 from src.core.config import settings
 from src.core.orchestrator import SystemOrchestrator
 from src.core.types import NormalizedMessage
@@ -24,6 +25,10 @@ async def main() -> None:
     print("=" * 60)
 
     settings.validate_openrouter_key()
+    validate_browser_runtime()
+    if settings.browser_enabled:
+        _, browser_detail = browser_backend_availability()
+        print(f"✅ Browser automation ready: {settings.browser_backend} ({browser_detail})")
     settings.ensure_directories()
 
     if db._connection is None and db.db_path != settings.db_path:
