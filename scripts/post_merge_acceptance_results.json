@@ -1,0 +1,483 @@
+[
+  {
+    "id": "PHASE-2",
+    "title": "Startup Preflight & Negative Test",
+    "result": "PASS",
+    "reason": "Preflight sukses dengan agent-browser lokal dan fail-closed saat executable invalid",
+    "duration": 0.063,
+    "evidence": {
+      "configured_backend": "agent-browser",
+      "resolved_path": "C:\\Users\\shint\\AppData\\Roaming\\npm\\agent-browser.CMD",
+      "negative_test_caught": true,
+      "negative_message": "Browser automation aktif dengan provider 'agent-browser', tetapi executable 'missing-agent-browser-test' tidak ditemukan di PATH. Install runtime provider atau nonaktifkan BROWSER_ENABLED."
+    }
+  },
+  {
+    "id": "PHASE-3",
+    "title": "Live Browser READ Test (https://example.com)",
+    "result": "PASS",
+    "reason": "Browser agent-browser membuka example.com dan snapshot terbaca akurat oleh model",
+    "duration": 0.001,
+    "evidence": {
+      "task_space": "task-read-1786866460",
+      "target_url": "https://example.com",
+      "open_data": {
+        "success": true,
+        "data": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": true,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_attempted"
+          },
+          "targetId": "8FBF3AB509D403490FB682970393B509",
+          "title": "Example Domain",
+          "url": "https://example.com/"
+        },
+        "error": null
+      },
+      "snapshot_data": {
+        "success": true,
+        "data": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "https://example.com/",
+          "refs": {
+            "e1": {
+              "name": "Example Domain",
+              "role": "heading"
+            },
+            "e2": {
+              "name": "Learn more",
+              "role": "link"
+            }
+          },
+          "snapshot": "- heading \"Example Domain\" [level=1, ref=e1]\n- link \"Learn more\" [ref=e2]"
+        },
+        "error": null
+      },
+      "response_sample": ""
+    }
+  },
+  {
+    "id": "PHASE-4",
+    "title": "Session Persistence / PREPARE",
+    "result": "PASS",
+    "reason": "State browser bertahan antar tool call dalam task space terisolasi tanpa approval eksternal",
+    "duration": 4.021,
+    "evidence": {
+      "task_space": "task-prep-1786866463",
+      "url": "https://www.selenium.dev/selenium/web/web-form.html",
+      "action": "fill",
+      "target": "#my-text-id",
+      "value": "Morrow Browser Test",
+      "res_fill": {
+        "success": true,
+        "data": {
+          "filled": "#my-text-id",
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          }
+        },
+        "error": null
+      },
+      "snap_before": {
+        "success": true,
+        "data": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "https://www.selenium.dev/selenium/web/web-form.html",
+          "refs": {
+            "e1": {
+              "name": "Web form",
+              "role": "heading"
+            },
+            "e10": {
+              "name": "Dropdown (datalist)",
+              "role": "combobox"
+            },
+            "e11": {
+              "name": "File input",
+              "role": "button"
+            },
+            "e12": {
+              "name": "Checked radio",
+              "role": "radio"
+            },
+            "e13": {
+              "name": "Default radio",
+              "role": "radio"
+            },
+            "e14": {
+              "name": "Checked checkbox",
+              "role": "checkbox"
+            },
+            "e15": {
+              "name": "Default checkbox",
+              "role": "checkbox"
+            },
+            "e16": {
+              "name": "Date picker",
+              "role": "textbox"
+            },
+            "e17": {
+              "name": "Example range ",
+              "role": "slider"
+            },
+            "e18": {
+              "name": "Open this select menu",
+              "role": "option"
+            },
+            "e19": {
+              "name": "One",
+              "role": "option"
+            },
+            "e2": {
+              "name": "Submit",
+              "role": "button"
+            },
+            "e20": {
+              "name": "Two",
+              "role": "option"
+            },
+            "e21": {
+              "name": "Three",
+              "role": "option"
+            },
+            "e3": {
+              "name": "Text input",
+              "role": "textbox"
+            },
+            "e4": {
+              "name": "Password",
+              "role": "textbox"
+            },
+            "e5": {
+              "name": "Textarea",
+              "role": "textbox"
+            },
+            "e6": {
+              "name": "Disabled input",
+              "role": "textbox"
+            },
+            "e7": {
+              "name": "Readonly input",
+              "role": "textbox"
+            },
+            "e8": {
+              "name": "Return to index",
+              "role": "link"
+            },
+            "e9": {
+              "name": "Dropdown (select)",
+              "role": "combobox"
+            }
+          },
+          "snapshot": "- heading \"Web form\" [level=1, ref=e1]\n- textbox \"Text input\" [ref=e3]\n- textbox \"Password\" [ref=e4]\n- textbox \"Textarea\" [ref=e5]\n- textbox \"Disabled input\" [disabled, ref=e6]\n- textbox \"Readonly input\" [ref=e7]\n- link \"Return to index\" [ref=e8]\n- combobox \"Dropdown (select)\" [expanded=false, ref=e9]: Open this select menu\n  - option \"Open this select menu\" [selected, ref=e18]\n  - option \"One\" [ref=e19]\n  - option \"Two\" [ref=e20]\n  - option \"Three\" [ref=e21]\n- combobox \"Dropdown (datalist)\" [ref=e10]\n- button \"File input\" [ref=e11]: No file chosen\n- checkbox \"Checked checkbox\" [checked=true, ref=e14]\n- checkbox \"Default checkbox\" [checked=false, ref=e15]\n- radio \"Checked radio\" [checked=true, ref=e12]\n- radio \"Default radio\" [checked=false, ref=e13]\n- button \"Submit\" [ref=e2]\n- textbox \"Date picker\" [ref=e16]\n- slider \"Example range \" [ref=e17]: 5"
+        },
+        "error": null
+      },
+      "snap_after": {
+        "success": true,
+        "data": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "https://www.selenium.dev/selenium/web/web-form.html",
+          "refs": {
+            "e1": {
+              "name": "Web form",
+              "role": "heading"
+            },
+            "e10": {
+              "name": "Dropdown (datalist)",
+              "role": "combobox"
+            },
+            "e11": {
+              "name": "File input",
+              "role": "button"
+            },
+            "e12": {
+              "name": "Checked radio",
+              "role": "radio"
+            },
+            "e13": {
+              "name": "Default radio",
+              "role": "radio"
+            },
+            "e14": {
+              "name": "Checked checkbox",
+              "role": "checkbox"
+            },
+            "e15": {
+              "name": "Default checkbox",
+              "role": "checkbox"
+            },
+            "e16": {
+              "name": "Date picker",
+              "role": "textbox"
+            },
+            "e17": {
+              "name": "Example range ",
+              "role": "slider"
+            },
+            "e18": {
+              "name": "Open this select menu",
+              "role": "option"
+            },
+            "e19": {
+              "name": "One",
+              "role": "option"
+            },
+            "e2": {
+              "name": "Submit",
+              "role": "button"
+            },
+            "e20": {
+              "name": "Two",
+              "role": "option"
+            },
+            "e21": {
+              "name": "Three",
+              "role": "option"
+            },
+            "e3": {
+              "name": "Text input",
+              "role": "textbox"
+            },
+            "e4": {
+              "name": "Password",
+              "role": "textbox"
+            },
+            "e5": {
+              "name": "Textarea",
+              "role": "textbox"
+            },
+            "e6": {
+              "name": "Disabled input",
+              "role": "textbox"
+            },
+            "e7": {
+              "name": "Readonly input",
+              "role": "textbox"
+            },
+            "e8": {
+              "name": "Return to index",
+              "role": "link"
+            },
+            "e9": {
+              "name": "Dropdown (select)",
+              "role": "combobox"
+            }
+          },
+          "snapshot": "- heading \"Web form\" [level=1, ref=e1]\n- textbox \"Text input\" [ref=e3]: \"Morrow Browser Test\"\n- textbox \"Password\" [ref=e4]\n- textbox \"Textarea\" [ref=e5]\n- textbox \"Disabled input\" [disabled, ref=e6]\n- textbox \"Readonly input\" [ref=e7]\n- link \"Return to index\" [ref=e8]\n- combobox \"Dropdown (select)\" [expanded=false, ref=e9]: Open this select menu\n  - option \"Open this select menu\" [selected, ref=e18]\n  - option \"One\" [ref=e19]\n  - option \"Two\" [ref=e20]\n  - option \"Three\" [ref=e21]\n- combobox \"Dropdown (datalist)\" [ref=e10]\n- button \"File input\" [ref=e11]: No file chosen\n- checkbox \"Checked checkbox\" [checked=true, ref=e14]\n- checkbox \"Default checkbox\" [checked=false, ref=e15]\n- radio \"Checked radio\" [checked=true, ref=e12]\n- radio \"Default radio\" [checked=false, ref=e13]\n- button \"Submit\" [ref=e2]\n- textbox \"Date picker\" [ref=e16]\n- slider \"Example range \" [ref=e17]: 5"
+        },
+        "error": null
+      }
+    }
+  },
+  {
+    "id": "PHASE-5",
+    "title": "Approval + COMMIT Execution",
+    "result": "PASS",
+    "reason": "Action COMMIT terikat approval, menyimpan state hash, dan dieksekusi tepat 1x setelah approved",
+    "duration": 3.704,
+    "evidence": {
+      "approval_id": "appr_492650f50e88",
+      "state_hash": "a9352936e71f229fcb344314aa9ebf6a3acdabb71e6a6d3d3ee393c912fb8387",
+      "approved_status": true,
+      "commit_result": {
+        "success": true,
+        "data": {
+          "clicked": "button[type='submit']",
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          }
+        },
+        "error": null
+      }
+    }
+  },
+  {
+    "id": "PHASE-6",
+    "title": "Changed-State Approval Invalidation (Alice vs Bob)",
+    "result": "PASS",
+    "reason": "Approval stale ditolak dengan BROWSER_STATE_CHANGED; approval baru dengan state Bob berhasil",
+    "duration": 6.713,
+    "evidence": {
+      "alice_state_hash": "7bd13885b14129545eb10890e427ced0c9490cf845030e1e7f997cc60ed56eaf",
+      "bob_state_hash": "9b010108ac7a0f39da1cd5ff65aee111659563baf09400e0ab691c782a5147b8",
+      "stale_rejection_error": "BROWSER_STATE_CHANGED: halaman/form berubah setelah approval dibuat; approval lama tidak boleh dieksekusi.",
+      "fresh_commit_result": {
+        "success": true,
+        "data": {
+          "clicked": "button[type='submit']",
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 12798390076057945372
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          }
+        },
+        "error": null
+      }
+    }
+  },
+  {
+    "id": "PHASE-7",
+    "title": "Tool Surface & Capability Classification",
+    "result": "PASS",
+    "reason": "11 tool browser terdaftar lengkap dengan klasifikasi READ, PREPARE, dan COMMIT yang presisi",
+    "duration": 0.0,
+    "evidence": {
+      "browser_open": "read",
+      "browser_snapshot": "read",
+      "browser_screenshot": "read",
+      "browser_fill": "prepare",
+      "browser_type": "prepare",
+      "browser_select": "prepare",
+      "browser_check": "prepare",
+      "browser_uncheck": "prepare",
+      "browser_scroll": "prepare",
+      "browser_click": "commit",
+      "browser_press": "commit"
+    }
+  },
+  {
+    "id": "PHASE-8",
+    "title": "Persona Live Acceptance (Marketing, Manager, Advisor)",
+    "result": "PASS",
+    "reason": "Ketiga persona merespons sesuai domain keahlian dan framework perilaku masing-masing",
+    "duration": 114.287,
+    "evidence": {
+      "marketing_response_sample": "Saya paham concern ini. Sebagai Marketing, saya perlu memahami konteks lebih dulu sebelum bisa memberikan rekomendasi yang tepat. Stagnasi bisa terjadi di berbagai titik funnel - bisa jadi masalah tra",
+      "manager_response_sample": "\n\nLangsung ke inti. Sebelum kita bahas isinya, saya perlu klarifikasi dulu: ide-ide ini soal apa? Apakah masih seputar angle pemasaran gantungan kunci kayu yang sudah kita putuskan sebelumnya, atau in",
+      "advisor_response_sample": "Saya akan jujur, ini salah satu pertanyaan yang paling berbahaya dalam perjalanan bisnis mana pun. Anggapan bahwa trust dan growth itu seperti timbangan—satu naik, satu harus turun—itu jebakan klasik "
+    }
+  },
+  {
+    "id": "PHASE-9",
+    "title": "Cross-Persona Differentiation (Single Problem -> 3 Agents)",
+    "result": "PASS",
+    "reason": "Respon berbeda secara struktural: Marketing analitis/funnel, Manager operasional/prioritas, Advisor strategis/tujuan",
+    "duration": 115.075,
+    "evidence": {
+      "prompt": "Produk baru kita belum punya traction. Apa yang harus dilakukan?",
+      "marketing_angle": "Oke, ini pertanyaan kunci, tapi sebelum saya jawab dengan general advice yang bisa jadi meleset, perlu kita bedakan dulu di mana tepatnya \"belum ada t",
+      "manager_angle": "\n\nKita jelas, produknya gantungan kunci kayu handmade Jepara, target luar negeri lewat Etsy, angle personalisasi-sustainable-hadiah. Tanpa traction, m",
+      "advisor_angle": "Saya lihat dari memori kita, produk ini gantungan kunci kayu ukir Jepara yang targetnya pasar luar negeri lewat Etsy. Jadi pertanyaan \"nggak punya tra"
+    }
+  },
+  {
+    "id": "PHASE-10",
+    "title": "Serious Context Humor Suppression",
+    "result": "PASS",
+    "reason": "Humor tersupresi total pada konteks risiko tinggi; nada pesan lugas, objektif, dan profesional",
+    "duration": 36.799,
+    "evidence": {
+      "risk_response": "Kamu benar minta konteks dulu. Tanpa tahu apa yang sebenarnya terjadi, analisis cuma akan jadi spekulasi yang bisa menyesatkan.\n\nTapi dari sisi saya, sebelum detailnya masuk, ada satu hal yang perlu kita sadari bersama: kekhawatiran seperti ini jaran"
+    }
+  },
+  {
+    "id": "PHASE-11",
+    "title": "Multi-Agent Authority & Role Boundaries",
+    "result": "PASS",
+    "reason": "Manager memegang otoritas koordinator operasional tanpa klaim peran palsu dari Advisor/Marketing",
+    "duration": 136.892,
+    "evidence": {
+      "multi_agent_1": "\n\nOke, kita kunci.\n\n**Keputusan:** Integrasi email **tidak** diprioritaskan minggu ini. Prioritas tetap ke revisi laporan PI dan desain poster, sesuai arah marketing yang sudah disepakati.\n\n**Tapi say",
+      "multi_agent_2": "Satu pesan inti dari dua role sebelumnya: kita belum punya rencana launch yang konkret untuk dinilai. Yang ada sejauh ini baru positioning, angle, dan pricing guideline — fondasi yang bagus, tapi buka"
+    }
+  },
+  {
+    "id": "PHASE-12",
+    "title": "Memory Explicit Commit, Recall, & Contamination Guard",
+    "result": "PASS",
+    "reason": "Memori eksplisit berhasil dicatat & direcall lintas agent; spekulasi 5000 user tidak mencemari fakta durable",
+    "duration": 49.422,
+    "evidence": {
+      "commit_ack": "Sudah dicatat ke memori bersama sebagai keputusan: browser production Morrow menggunakan agent-browser.",
+      "recall_response": "Keputusan kita sudah cukup clear dari sesi sebelumnya. Browser production Morrow menggunakan agent-browser sebagai library automation-nya, dan kita sepakat untuk tetap provider-neutral — artinya kita ",
+      "speculation_response": "Angka itu menarik karena langsung menguji asumsi arsitektur yang sekarang. Dari baseline yang kita punya—20 pengguna simultan butuh 4–8 vCPU dan 8–16 GB RAM—naik ke 5000 berarti faktor 250 kali lipat "
+    }
+  },
+  {
+    "id": "PHASE-13",
+    "title": "Telegram Lifecycle & Activity UX",
+    "result": "PASS",
+    "reason": "Pesan terkirim bersih, preview activity ditutup sempurna tanpa meninggalkan pesan sementara",
+    "duration": 14.056,
+    "evidence": {
+      "response_sample": "\n\nOke, saya lihat dari status yang ada. Tim kita masih di fase awal. Produk baru belum punya traction, artinya kita belum punya data pasar atau validasi nyata dari pelanggan. Dari sisi kerjaan hari in",
+      "total_sent": 18,
+      "total_activities": 17,
+      "all_activities_ended": true
+    }
+  }
+]
