@@ -23,7 +23,11 @@ sys.path.insert(0, str(REPO_ROOT))
 from src.adapters.base import BaseChannelAdapter
 from src.approval.gateway import approval_gateway
 from src.browser.base import BrowserActionClass, BrowserBackendUnavailableError
-from src.browser.provider import browser_backend_availability, get_browser_backend, validate_browser_runtime
+from src.browser.provider import (
+    browser_backend_availability,
+    get_browser_backend,
+    validate_browser_runtime,
+)
 from src.browser.tools import ensure_browser_tools_registered
 from src.core.config import settings
 from src.core.orchestrator import SystemOrchestrator
