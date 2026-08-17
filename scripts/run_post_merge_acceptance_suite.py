@@ -24,6 +24,7 @@ from src.adapters.base import BaseChannelAdapter
 from src.approval.gateway import approval_gateway
 from src.browser.base import BrowserActionClass, BrowserBackendUnavailableError
 from src.browser.provider import browser_backend_availability, get_browser_backend, validate_browser_runtime
+from src.browser.tools import ensure_browser_tools_registered
 from src.core.config import settings
 from src.core.orchestrator import SystemOrchestrator
 from src.core.types import NormalizedMessage, RoleID
@@ -31,7 +32,6 @@ from src.memory.service import memory_service
 from src.storage.sqlite import db
 from src.tasks.service import task_service
 from src.tools.builtins import ensure_builtin_tools_registered
-from src.browser.tools import ensure_browser_tools_registered
 
 
 class LiveTrackingAdapter(BaseChannelAdapter):
@@ -119,7 +119,6 @@ async def run_suite() -> list[dict[str, Any]]:
             return result
         return adapter.sent_messages[-1]["text"] if len(adapter.sent_messages) > before else ""
 
-    # PHASE 2: startup and negative browser preflight.
     available, detail = browser_backend_availability()
     negative_ok = False
     original_executable = settings.browser_agent_executable
@@ -136,7 +135,6 @@ async def run_suite() -> list[dict[str, Any]]:
     backend = get_browser_backend()
     demo_url = "https://www.selenium.dev/selenium/web/web-form.html"
 
-    # PHASE 3: READ through the real backend contract.
     read_space = f"accept-read-{int(time.time())}"
     try:
         opened = await backend.open("https://example.com", task_space=read_space)
@@ -146,7 +144,6 @@ async def run_suite() -> list[dict[str, Any]]:
     except Exception as exc:
         record("PHASE-3", "Browser READ", False, f"{exc.__class__.__name__}: {exc}")
 
-    # PHASE 4: PREPARE is allowed without approval.
     prepare_space = f"accept-prepare-{int(time.time())}"
     try:
         await backend.open(demo_url, task_space=prepare_space)
@@ -160,7 +157,6 @@ async def run_suite() -> list[dict[str, Any]]:
     except Exception as exc:
         record("PHASE-4", "Browser PREPARE", False, f"{exc.__class__.__name__}: {exc}")
 
-    # PHASE 5: COMMIT MUST execute through ApprovalGateway, never raw backend.interact.
     commit_space = f"accept-commit-{int(time.time())}"
     try:
         await backend.open(demo_url, task_space=commit_space)
@@ -182,7 +178,6 @@ async def run_suite() -> list[dict[str, Any]]:
     except Exception as exc:
         record("PHASE-5", "Approval-gated browser COMMIT", False, f"{exc.__class__.__name__}: {exc}")
 
-    # PHASE 6: stale approval must fail after state mutation; fresh approval must work.
     stale_space = f"accept-stale-{int(time.time())}"
     try:
         await backend.open(demo_url, task_space=stale_space)
@@ -199,7 +194,6 @@ async def run_suite() -> list[dict[str, Any]]:
     except Exception as exc:
         record("PHASE-6", "Changed-state approval invalidation", False, f"{exc.__class__.__name__}: {exc}")
 
-    # PHASE 8-10: persona behavioral checks.
     marketing = await ask("accept-persona-mkt", "Marketing, penjualan handmade wood stagnan. Apa yang harus dilakukan?")
     manager = await ask("accept-persona-mgr", "Manager, terlalu banyak ide dan semuanya dianggap penting. Apa yang kita lakukan?")
     advisor = await ask("accept-persona-adv", "Advisor, kita kepikiran mengorbankan trust user supaya growth lebih cepat. Gimana menurut kamu?")
@@ -213,7 +207,6 @@ async def run_suite() -> list[dict[str, Any]]:
     no_humor = not any(x in serious.lower() for x in ["haha", "wkwk", "lol", "🤣", "😂"])
     record("PHASE-10", "Serious-context humor suppression", no_humor, "humor tersupresi pada konteks risiko" if no_humor else "humor masih muncul")
 
-    # PHASE 11: verify actual durable participation, not a hardcoded PASS.
     multi_prompt = "Advisor dan Manager, tentukan apakah integrasi email layak diprioritaskan minggu ini."
     multi = await ask("accept-multi", multi_prompt)
     task = await db.fetch_one(
@@ -226,13 +219,11 @@ async def run_suite() -> list[dict[str, Any]]:
     task_done = bool(task and task["status"] == "done")
     record("PHASE-11", "Multi-agent authority and completion", exact_roles and task_done, "Advisor + Manager terverifikasi di ledger dan task done" if exact_roles and task_done else "ledger tidak memenuhi kontrak multi-agent", {"response": multi[:200], "task": task, "runs": runs})
 
-    # PHASE 12: explicit memory write + cross-role recall.
     commit_ack = await ask("accept-memory-write", "Manager, catat sebagai keputusan: browser production Morrow menggunakan agent-browser.")
     recall = await ask("accept-memory-read", "Advisor, apa keputusan kita soal browser production?")
     memory_ok = commit_ack.startswith("Sudah dicatat ke memori bersama") and "browser" in recall.lower()
     record("PHASE-12", "Memory commit and cross-role recall", memory_ok, "write backend terverifikasi dan recall memuat keputusan browser" if memory_ok else "write/recall tidak lengkap", {"ack": commit_ack, "recall": recall})
 
-    # PHASE 13: activity previews must all close.
     await ask("accept-activity", "Manager, sebutkan ringkas status kesiapan tim kita.")
     activities_ok = all(activity["status"] == "ended" for activity in adapter.activities)
     record("PHASE-13", "Activity lifecycle", activities_ok, "semua activity preview ditutup" if activities_ok else "ada activity yang tertinggal", {"activities": adapter.activities})
