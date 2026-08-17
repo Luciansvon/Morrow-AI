@@ -166,12 +166,7 @@ class EgoLiteBackend(BrowserBackend):
         target = str(parameters.get("target") or "").strip()
         prelude = self._space_prelude(task_space)
 
-        if action == "fill":
-            value = str(parameters.get("value") or "")
-            if not target:
-                raise ValueError("Browser target wajib diisi.")
-            body = f"await fillInput({self._json_literal(target)}, {self._json_literal(value)});\n"
-        elif action == "type":
+        if action in {"fill", "type"}:
             value = str(parameters.get("value") or "")
             if not target:
                 raise ValueError("Browser target wajib diisi.")
