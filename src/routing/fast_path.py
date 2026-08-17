@@ -3,6 +3,7 @@
 import re
 
 from src.core.types import NormalizedMessage, RoleID
+from src.routing.addressing import AddressingDetector
 from src.storage.sqlite import db
 from src.tasks.service import task_service
 
@@ -15,19 +16,13 @@ class FastPathRouter:
     @staticmethod
     async def resolve_fast_path(message: NormalizedMessage) -> tuple[RoleID, str] | None:
         text_lower = message.text.lower().strip()
-        from src.adapters.telegram.bot_registry import bot_registry
 
-        rows = await db.fetch_all("SELECT role_id, display_name FROM agents")
-        agent_names = {r["role_id"]: r["display_name"].lower() for r in rows}
-        # Decision OQ-001: explicit address wins over reply context.
-        for role_id_str, display_name in agent_names.items():
-            role = RoleID(role_id_str)
-            username = bot_registry.get_username(role)
-            patterns = [rf"@?{re.escape(role_id_str)}\b", rf"@?{re.escape(display_name)}\b"]
-            if username:
-                patterns.append(rf"@{re.escape(username)}\b")
-            if any(re.search(pattern, text_lower) for pattern in patterns):
-                return role, f"Sebutan eksplisit nama agen ({role_id_str})"
+        # Keep direct-address grammar identical to AddressingDetector. Bare role words that
+        # are merely objects of a question must not become a routing instruction here.
+        mentioned_roles = await AddressingDetector._explicit_roles(text_lower)
+        if mentioned_roles:
+            role = mentioned_roles[0]
+            return role, f"Sebutan eksplisit direct address ({role.value})"
 
         if message.reply_to_role is not None:
             return message.reply_to_role, "Balasan langsung ke identitas bot Telegram"
@@ -38,7 +33,7 @@ class FastPathRouter:
                 "SELECT originating_role_id FROM message_agent_map WHERE platform_message_id=?",
                 (canonical,),
             )
-            if not row:  # compatibility data/test lama
+            if not row:
                 row = await db.fetch_one(
                     "SELECT originating_role_id FROM message_agent_map WHERE platform_message_id=? AND group_id=?",
                     (message.reply_to_message_id, message.group_id),
@@ -50,7 +45,10 @@ class FastPathRouter:
         for task in active_tasks:
             if task.id.lower() in text_lower:
                 return task.current_owner, f"Task ID aktif {task.id}"
-        if len(active_tasks) == 1 and re.search(r"\b(lanjut|lanjutkan|update|status|progres|progress|yang tadi)\b", text_lower):
+        if len(active_tasks) == 1 and re.search(
+            r"\b(lanjut|lanjutkan|update|status|progres|progress|yang tadi)\b",
+            text_lower,
+        ):
             return active_tasks[0].current_owner, "Kontinuitas satu task aktif"
         return None
 

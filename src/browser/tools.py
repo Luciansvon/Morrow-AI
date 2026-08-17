@@ -108,13 +108,17 @@ async def browser_click(
     target: str,
     _task_space: str,
     _state_hash: str | None = None,
+    _approved: bool = False,
 ) -> dict[str, Any]:
+    if not _approved:
+        raise PermissionError("BROWSER_COMMIT_APPROVAL_REQUIRED")
     await _verify_expected_state(_task_space, _state_hash)
     return await get_browser_backend().interact(
         "click",
         {"target": target},
         task_space=_task_space,
         action_class=BrowserActionClass.COMMIT,
+        approved=True,
     )
 
 
@@ -122,13 +126,17 @@ async def browser_press(
     key: str,
     _task_space: str,
     _state_hash: str | None = None,
+    _approved: bool = False,
 ) -> dict[str, Any]:
+    if not _approved:
+        raise PermissionError("BROWSER_COMMIT_APPROVAL_REQUIRED")
     await _verify_expected_state(_task_space, _state_hash)
     return await get_browser_backend().interact(
         "press",
         {"key": key},
         task_space=_task_space,
         action_class=BrowserActionClass.COMMIT,
+        approved=True,
     )
 
 

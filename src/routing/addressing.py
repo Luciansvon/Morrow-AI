@@ -26,12 +26,24 @@ class AddressingDetector:
             r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b"
         ),
         (
+            r"\b(makasih|terima\s*kasih|thanks|thx)\s+"
+            r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b"
+        ),
+        (
             r"^(kalian|kalian\s+semua|semua\s+orang)\s+"
-            r"(gimana|ada|siap|lagi\s+apa|dengerin|tolong)\b"
+            r"(gimana|ada|siap|lagi\s+apa|dengerin|tolong|bantu|kasih|beri)\b"
         ),
         r"^(semua|semuanya|tim|team)\s*,\s*",
         r"\b(semua\s+siap|semua\s+ada|tim\s+siap|tim\s+standby)\b",
         r"^(semua|semuanya)\s+(siap|ada|dengerin|tolong\s+dengar)\b",
+        (
+            r"^(semua|semuanya|tim|team|kalian)\s+"
+            r"(tolong|bantu|kasih|beri|coba|cek|analisis|audit|nilai|evaluasi|riset|cari|buat|susun)\b"
+        ),
+        (
+            r"\b(kalian|semua|semuanya)\s+(kasih|beri)\s+"
+            r"(pendapat|masukan|opini|pandangan|saran)\b"
+        ),
     ]
 
     OBJECT_QUANTIFIER_PATTERNS: ClassVar[list[str]] = [
@@ -49,23 +61,95 @@ class AddressingDetector:
         ),
     ]
 
+    DIRECT_PREFIXES: ClassVar[tuple[str, ...]] = (
+        "halo",
+        "hai",
+        "hey",
+        "hei",
+        "pagi",
+        "siang",
+        "sore",
+        "malam",
+        "tolong",
+        "minta",
+        "panggil",
+    )
+    DIRECT_FOLLOW_ACTIONS: ClassVar[tuple[str, ...]] = (
+        "tolong",
+        "bantu",
+        "cek",
+        "buat",
+        "nilai",
+        "evaluasi",
+        "analisis",
+        "audit",
+        "riset",
+        "cari",
+        "jelaskan",
+        "jawab",
+        "kasih",
+        "beri",
+        "susun",
+    )
+
     @staticmethod
-    async def _explicit_roles(text_lower: str) -> list[RoleID]:
+    async def _role_aliases() -> list[tuple[str, RoleID]]:
         rows = await db.fetch_all("SELECT role_id, display_name FROM agents")
         display_names = {row["role_id"]: row["display_name"] for row in rows}
-        mentioned: list[RoleID] = []
+        aliases: list[tuple[str, RoleID]] = []
+        seen: set[tuple[str, RoleID]] = set()
         for role in (RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR):
-            terms = {role.value}
+            terms = [role.value]
             display_name = str(display_names.get(role.value, "")).strip().lower()
             if display_name:
-                terms.add(display_name)
-            patterns = [rf"(?<!\w)@?{re.escape(term)}(?!\w)" for term in terms]
+                terms.append(display_name)
             username = bot_registry.get_username(role)
             if username:
-                patterns.append(rf"(?<!\w)@{re.escape(username.lower())}(?!\w)")
-            if any(re.search(pattern, text_lower) for pattern in patterns):
-                mentioned.append(role)
-        return mentioned
+                terms.append(username.lower())
+            for term in terms:
+                key = (term, role)
+                if term and key not in seen:
+                    aliases.append(key)
+                    seen.add(key)
+        return aliases
+
+    @classmethod
+    async def _explicit_roles(cls, text_lower: str) -> list[RoleID]:
+        """Return only actual direct addresses, preserving the user's mention order.
+
+        @mentions are explicit anywhere. Bare role/display names are considered addresses only
+        in the leading vocative/imperative clause, so phrases such as
+        "apa bedanya manager dan advisor" stay ordinary questions instead of fan-out requests.
+        """
+        aliases = await cls._role_aliases()
+        positions: dict[RoleID, int] = {}
+
+        for alias, role in aliases:
+            pattern = rf"(?<!\w)@{re.escape(alias)}(?!\w)"
+            for match in re.finditer(pattern, text_lower):
+                positions[role] = min(positions.get(role, match.start()), match.start())
+
+        alias_terms = sorted({alias for alias, _ in aliases}, key=len, reverse=True)
+        if alias_terms:
+            alias_re = "(?:" + "|".join(re.escape(alias) for alias in alias_terms) + ")"
+            prefix_re = "(?:" + "|".join(re.escape(x) for x in cls.DIRECT_PREFIXES) + ")"
+            action_re = "(?:" + "|".join(re.escape(x) for x in cls.DIRECT_FOLLOW_ACTIONS) + ")"
+            direct = re.match(
+                rf"^\s*(?:(?:{prefix_re})\s+)?"
+                rf"(?P<head>{alias_re}(?:\s*(?:dan|&|,)\s*{alias_re}){{0,2}})"
+                rf"(?=\s*(?:[,;:]|\b{action_re}\b|$))",
+                text_lower,
+            )
+            if direct:
+                head_start = direct.start("head")
+                head = direct.group("head")
+                for alias, role in aliases:
+                    match = re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", head)
+                    if match:
+                        absolute = head_start + match.start()
+                        positions[role] = min(positions.get(role, absolute), absolute)
+
+        return [role for role, _ in sorted(positions.items(), key=lambda item: item[1])]
 
     @staticmethod
     async def _restore_reply_context(message: NormalizedMessage) -> None:
@@ -88,8 +172,6 @@ class AddressingDetector:
                 message.reply_to_text = row.get("response_text") or None
             return
 
-        # Compatibility fallback for older messages: role continuity still works even
-        # when the message predates the dedicated conversation map.
         legacy = await db.fetch_one(
             "SELECT originating_role_id FROM message_agent_map WHERE platform_message_id=?",
             (canonical,),
@@ -155,8 +237,6 @@ class AddressingDetector:
         text_lower = message.text.strip().lower()
         intent = intent_detector.detect_intent(message.text)
 
-        # Explicit agent addressing always wins. The word "semua" may quantify an object,
-        # but it must not erase an explicit "Manager dan Advisor" address.
         mentioned_roles = await cls._explicit_roles(text_lower)
         if mentioned_roles:
             return cls._result_for_explicit(mentioned_roles, intent)

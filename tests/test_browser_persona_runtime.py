@@ -54,6 +54,27 @@ async def test_agent_browser_snapshot_uses_interactive_compact_mode(monkeypatch)
     assert calls == [("snapshot", "-i", "-c")]
 
 
+@pytest.mark.asyncio
+async def test_browser_backend_rejects_direct_commit_without_approval(monkeypatch):
+    backend = AgentBrowserBackend(executable="not-used")
+    called = False
+
+    async def fake_run(task_space: str, *command: str):
+        nonlocal called
+        called = True
+        return {"success": True}
+
+    monkeypatch.setattr(backend, "_run", fake_run)
+    with pytest.raises(PermissionError, match="BROWSER_COMMIT_APPROVAL_REQUIRED"):
+        await backend.interact(
+            "click",
+            {"target": "@e1"},
+            task_space="task-direct-commit",
+            action_class=BrowserActionClass.COMMIT,
+        )
+    assert called is False
+
+
 def test_browser_tool_registry_matches_policy_surface(monkeypatch):
     monkeypatch.setattr(settings, "browser_enabled", True)
     ensure_builtin_tools_registered()
@@ -89,8 +110,9 @@ async def test_browser_approval_is_rejected_if_page_state_changes(monkeypatch):
         async def snapshot(self, *, task_space: str):
             return {"success": True, "data": {"snapshot": self.state, "task": task_space}}
 
-        async def interact(self, action, parameters, *, task_space, action_class):
+        async def interact(self, action, parameters, *, task_space, action_class, approved=False):
             assert action_class == BrowserActionClass.COMMIT
+            assert approved is True
             self.commits += 1
             return {"success": True, "action": action, "target": parameters.get("target")}
 
@@ -130,8 +152,9 @@ async def test_browser_approval_executes_when_page_state_is_unchanged(monkeypatc
         async def snapshot(self, *, task_space: str):
             return {"success": True, "data": {"snapshot": "stable", "task": task_space}}
 
-        async def interact(self, action, parameters, *, task_space, action_class):
+        async def interact(self, action, parameters, *, task_space, action_class, approved=False):
             assert action_class == BrowserActionClass.COMMIT
+            assert approved is True
             self.commits += 1
             return {"success": True, "action": action}
 

@@ -21,7 +21,7 @@ class BrowserBackend(ABC):
     READ actions inspect or navigate without mutating external state.
     PREPARE actions may alter only the local page/session state, such as filling a draft.
     COMMIT actions submit, purchase, post, delete, send, or otherwise mutate external state
-    and MUST pass through Morrow's approval gateway before execution.
+    and MUST carry an approval proof into the backend boundary before execution.
     """
 
     @abstractmethod
@@ -44,8 +44,12 @@ class BrowserBackend(ABC):
         *,
         task_space: str,
         action_class: BrowserActionClass,
+        approved: bool = False,
     ) -> dict[str, Any]:
-        """Perform a browser action after policy/approval classification."""
+        """Perform a browser action after policy/approval classification.
+
+        Backends MUST reject COMMIT when approved=False even if a caller bypasses ToolExecutor.
+        """
 
     @abstractmethod
     async def handoff_to_user(self, *, task_space: str, reason: str) -> dict[str, Any]:
