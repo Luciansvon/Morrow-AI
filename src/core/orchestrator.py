@@ -211,8 +211,11 @@ class SystemOrchestrator:
         message: NormalizedMessage,
         targets: list[RoleID],
         coordinator: RoleID,
-        cancel_version: int,
+        cancel_version: int | None = None,
     ) -> str:
+        if cancel_version is None:
+            cancel_version = self._cancel_version(message.group_id)
+
         unique_targets: list[RoleID] = []
         for role in [coordinator, *targets]:
             if role not in unique_targets:
