@@ -51,8 +51,6 @@ class EgoLiteBackend(BrowserBackend):
         return bool(shutil.which(self.executable) or Path(self.executable).exists())
 
     def _check_platform_availability(self) -> None:
-        # Ego Lite documents macOS as the supported platform today. Do not hard-block
-        # future Windows/Linux builds if a real ego-browser executable is present.
         current = platform.system()
         if current != "Darwin" and not self._command_available():
             raise BrowserBackendUnavailableError(
@@ -160,22 +158,18 @@ class EgoLiteBackend(BrowserBackend):
         *,
         task_space: str,
         action_class: BrowserActionClass,
+        approved: bool = False,
     ) -> dict[str, Any]:
         self._validate_action_class(action, action_class)
+        if action_class == BrowserActionClass.COMMIT and not approved:
+            raise PermissionError("BROWSER_COMMIT_APPROVAL_REQUIRED")
         target = str(parameters.get("target") or "").strip()
         prelude = self._space_prelude(task_space)
 
-        if action == "fill":
+        if action in {"fill", "type"}:
             value = str(parameters.get("value") or "")
             if not target:
                 raise ValueError("Browser target wajib diisi.")
-            body = f"await fillInput({self._json_literal(target)}, {self._json_literal(value)});\n"
-        elif action == "type":
-            value = str(parameters.get("value") or "")
-            if not target:
-                raise ValueError("Browser target wajib diisi.")
-            # Keep PREPARE semantics: target-focused generic click is classified COMMIT
-            # by Morrow, so text entry uses Ego Lite's input helper directly.
             body = f"await fillInput({self._json_literal(target)}, {self._json_literal(value)});\n"
         elif action == "click":
             if not target:

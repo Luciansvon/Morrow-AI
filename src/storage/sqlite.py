@@ -104,7 +104,14 @@ class DatabaseManager:
             "memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")],
             "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")],
             "approvals": [("execution_error", "TEXT")],
-            "processed_events": [("group_id", "TEXT")],
+            "processed_events": [
+                ("group_id", "TEXT"),
+                ("status", "TEXT NOT NULL DEFAULT 'completed'"),
+                ("attempt_count", "INTEGER NOT NULL DEFAULT 1"),
+                ("lease_until", "REAL"),
+                ("last_error", "TEXT"),
+                ("updated_at", "TIMESTAMP"),
+            ],
             "usage_ledger": [("group_id", "TEXT"), ("thread_id", "TEXT")],
         }
         for table, additions in migrations.items():
@@ -114,6 +121,13 @@ class DatabaseManager:
             for col, ddl in additions:
                 if col not in cols:
                     await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        if await self._table_exists("processed_events"):
+            await conn.execute(
+                """UPDATE processed_events
+                   SET status=COALESCE(status, 'completed'),
+                       attempt_count=COALESCE(attempt_count, 1),
+                       updated_at=COALESCE(updated_at, processed_at)"""
+            )
         if await self._table_exists("memories"):
             await conn.execute("""DELETE FROM memories WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY group_id, scope, CASE WHEN scope='role' THEN COALESCE(role_id, '') ELSE '' END, key ORDER BY updated_at DESC, created_at DESC, rowid DESC) AS rn FROM memories) ranked WHERE rn > 1)""")
         await conn.commit()

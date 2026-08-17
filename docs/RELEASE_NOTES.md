@@ -1,5 +1,25 @@
 # Release Notes - Morrow
 
+## [v0.2.6] - 2026-08-17
+**Status:** dispatch/reliability hardening, wajib lolos CI sebelum merge ke `main`.
+
+Rilis ini menutup temuan audit ulang terhadap routing multi-agent, Telegram deduplication, control commands, conversation continuity, browser approval boundary, dan acceptance harness.
+
+Perubahan utama:
+- Variasi natural seperti `terimakasih semua`, `makasih semua`, dan `semua tolong ...` sekarang dikenali sebagai collective address tanpa bergantung pada koma.
+- Bare role names hanya dianggap direct address pada leading vocative/imperative clause; pertanyaan seperti `apa bedanya manager dan advisor` tidak lagi memicu fan-out. Urutan role yang disebut pengguna dipertahankan.
+- `stop/batal/jangan lanjut`, pause, dan resume menjadi control intent kelas pertama; stop/pause dapat melewati group lock dan menahan stale response yang selesai setelah user menghentikan pekerjaan.
+- Collective work memiliki durable per-agent ledger (`task_agent_runs`), tetap mencoba target lain ketika satu agent gagal, dan tidak boleh `done` bila target wajib belum selesai.
+- `processed_events` memakai lifecycle `processing/completed/failed` + lease/reclaim, sehingga crash setelah claim tidak lagi mengubah event menjadi duplikat permanen.
+- Task/thread continuity dibind ke conversation map ketika task dibuat; budget/loop/runtime memakai canonical inherited thread bila tersedia.
+- Semantic router fallback sekarang menghasilkan telemetry yang membedakan budget, low-confidence, parse failure, dan runtime failure.
+- Browser COMMIT ditolak di backend boundary tanpa approval proof; approval yang sah diteruskan ToolExecutor ke backend, bukan hanya dipercaya karena caller kebetulan lewat jalur yang benar.
+- Live/post-merge acceptance harness tidak lagi memberi PASS hanya karena respons non-kosong. Multi-agent completion dibuktikan lewat ledger durable, dan evidence checks tidak mengklaim source verification yang sebenarnya tidak dilakukan.
+- Regression tests ditambah untuk 3/3 collective completion, partial agent failure, event reclaim, urgent cancellation, addressing ambiguity/order, task/thread binding, dan direct browser COMMIT bypass.
+
+### Acceptance status
+CI tetap menjadi merge gate utama (`ruff check .` + `pytest -q` pada Python 3.11/3.12). Manual acceptance tidak boleh mengklaim PASS jika evidence tidak tersedia; kondisi yang masih membutuhkan verifikasi manusia dilabeli `PARTIAL` atau `FAIL`, bukan dihijaukan demi ketenangan psikologis build dashboard.
+
 ## [v0.2.2] - 2026-08-15
 **Status:** reliability-hardening candidate, wajib lolos CI sebelum merge ke `main`.
 

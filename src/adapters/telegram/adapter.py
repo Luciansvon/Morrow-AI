@@ -49,9 +49,6 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
             if not message.reply_to_text:
                 message.reply_to_text = parent.get("response_text") or None
 
-        # A new Telegram message still needs a durable thread id so replies can inherit it,
-        # but the NormalizedMessage field itself is reserved for inherited continuity.
-        # AgentRuntime receives the identical fresh thread id from the orchestrator.
         persisted_thread_id = (
             message.conversation_thread_id or f"thr_{message.group_id}_{message.message_id}"
         )
@@ -163,20 +160,50 @@ class TelegramMultiBotAdapter(BaseChannelAdapter):
                     allowed, _ = MessageNormalizer.check_access(norm)
                     if not allowed:
                         return
+
                     won = await MessageNormalizer.claim_event(norm.message_id, "telegram", norm.group_id)
                     if not won:
-                        return
+                        retryable = await MessageNormalizer.wait_for_event_retry(
+                            norm.message_id,
+                            "telegram",
+                            norm.group_id,
+                        )
+                        if not retryable:
+                            return
+                        won = await MessageNormalizer.claim_event(
+                            norm.message_id,
+                            "telegram",
+                            norm.group_id,
+                        )
+                        if not won:
+                            return
+
                     norm.event_claimed = True
-                    await self._hydrate_conversation_context(norm)
-                    norm.attachments = await self._download_attachments(
-                        message,
-                        current_bot,
-                        norm.group_id,
-                        norm.message_id,
-                        norm.text,
-                        norm.conversation_thread_id,
-                    )
-                    await self.message_handler(norm)
+                    try:
+                        await self._hydrate_conversation_context(norm)
+                        norm.attachments = await self._download_attachments(
+                            message,
+                            current_bot,
+                            norm.group_id,
+                            norm.message_id,
+                            norm.text,
+                            norm.conversation_thread_id,
+                        )
+                        await self.message_handler(norm)
+                    except Exception as exc:
+                        await MessageNormalizer.mark_event_failed(
+                            norm.message_id,
+                            "telegram",
+                            norm.group_id,
+                            error=f"{exc.__class__.__name__}: {exc}",
+                        )
+                        raise
+                    else:
+                        await MessageNormalizer.mark_event_completed(
+                            norm.message_id,
+                            "telegram",
+                            norm.group_id,
+                        )
                 return message_handler
 
             dp.message.register(create_handler(role, bot))

@@ -70,18 +70,12 @@ class AgentBrowserBackend(BrowserBackend):
             base.append("--headed")
         base.extend(command)
 
-        # npm global binaries on Windows are commonly .cmd/.bat shims. Resolve and
-        # invoke them explicitly through COMSPEC so CreateProcess behavior is stable.
         if os.name == "nt" and Path(executable).suffix.lower() in {".cmd", ".bat"}:
             comspec = os.environ.get("COMSPEC") or "cmd.exe"
             return [comspec, "/d", "/s", "/c", subprocess.list2cmdline(base)]
         return base
 
     def _run_sync_windows(self, argv: list[str]) -> tuple[int, str, str]:
-        # On Windows, agent-browser spawns a background daemon for session persistence.
-        # Anonymous pipes created by asyncio/Popen can be inherited by the daemon,
-        # preventing communicate() from closing. Using temporary files with close_fds=True
-        # decouples pipe inheritance and allows instant return.
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             out_file = Path(tmpdir) / "stdout.json"
             err_file = Path(tmpdir) / "stderr.txt"
@@ -157,7 +151,6 @@ class AgentBrowserBackend(BrowserBackend):
         return await self._run(task_space, "open", url)
 
     async def snapshot(self, *, task_space: str) -> dict[str, Any]:
-        # Interactive + compact keeps the model context small while retaining actionable refs.
         return await self._run(task_space, "snapshot", "-i", "-c")
 
     async def screenshot(self, *, task_space: str) -> dict[str, Any]:
@@ -184,8 +177,11 @@ class AgentBrowserBackend(BrowserBackend):
         *,
         task_space: str,
         action_class: BrowserActionClass,
+        approved: bool = False,
     ) -> dict[str, Any]:
         self._validate_action_class(action, action_class)
+        if action_class == BrowserActionClass.COMMIT and not approved:
+            raise PermissionError("BROWSER_COMMIT_APPROVAL_REQUIRED")
         target = str(parameters.get("target") or "").strip()
 
         if action in {"fill", "type", "select"}:

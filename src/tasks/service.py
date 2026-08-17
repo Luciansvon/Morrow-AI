@@ -1,4 +1,4 @@
-"""Lifecycle task dengan retry budget dan status terminal eksplisit."""
+"""Lifecycle task dengan retry budget, per-agent run ledger, dan status terminal eksplisit."""
 
 import uuid
 
@@ -54,6 +54,87 @@ class TaskService:
             (new_status.value, task_id),
         )
         return cursor.rowcount == 1
+
+    @staticmethod
+    async def cancel_active_tasks(group_id: str) -> int:
+        cursor = await db.execute(
+            """UPDATE tasks SET status='cancelled', updated_at=CURRENT_TIMESTAMP
+               WHERE group_id=? AND status IN ('todo','in_progress','blocked','waiting_user')""",
+            (group_id,),
+        )
+        return max(0, cursor.rowcount)
+
+    @staticmethod
+    async def pause_active_tasks(group_id: str) -> int:
+        cursor = await db.execute(
+            """UPDATE tasks SET status='waiting_user', updated_at=CURRENT_TIMESTAMP
+               WHERE group_id=? AND status IN ('todo','in_progress','blocked')""",
+            (group_id,),
+        )
+        return max(0, cursor.rowcount)
+
+    @staticmethod
+    async def resume_waiting_tasks(group_id: str) -> int:
+        cursor = await db.execute(
+            """UPDATE tasks SET status='todo', updated_at=CURRENT_TIMESTAMP
+               WHERE group_id=? AND status='waiting_user'""",
+            (group_id,),
+        )
+        return max(0, cursor.rowcount)
+
+    @staticmethod
+    async def start_agent_run(task_id: str, role: RoleID) -> None:
+        await db.execute(
+            """INSERT INTO task_agent_runs
+               (task_id, role_id, status, attempt_count, started_at, finished_at,
+                response_text, error_text)
+               VALUES (?, ?, 'running', 1, CURRENT_TIMESTAMP, NULL, NULL, NULL)
+               ON CONFLICT(task_id, role_id) DO UPDATE SET
+                   status='running',
+                   attempt_count=task_agent_runs.attempt_count+1,
+                   started_at=CURRENT_TIMESTAMP,
+                   finished_at=NULL,
+                   response_text=NULL,
+                   error_text=NULL""",
+            (task_id, role.value),
+        )
+
+    @staticmethod
+    async def complete_agent_run(task_id: str, role: RoleID, response_text: str) -> None:
+        await db.execute(
+            """UPDATE task_agent_runs
+               SET status='succeeded', response_text=?, error_text=NULL,
+                   finished_at=CURRENT_TIMESTAMP
+               WHERE task_id=? AND role_id=?""",
+            (response_text, task_id, role.value),
+        )
+
+    @staticmethod
+    async def fail_agent_run(task_id: str, role: RoleID, error_text: str) -> None:
+        await db.execute(
+            """UPDATE task_agent_runs
+               SET status='failed', error_text=?, finished_at=CURRENT_TIMESTAMP
+               WHERE task_id=? AND role_id=?""",
+            (error_text[:1000], task_id, role.value),
+        )
+
+    @staticmethod
+    async def cancel_agent_run(task_id: str, role: RoleID) -> None:
+        await db.execute(
+            """UPDATE task_agent_runs
+               SET status='cancelled', finished_at=CURRENT_TIMESTAMP
+               WHERE task_id=? AND role_id=? AND status='running'""",
+            (task_id, role.value),
+        )
+
+    @staticmethod
+    async def list_agent_runs(task_id: str) -> list[dict]:
+        return await db.fetch_all(
+            """SELECT task_id, role_id, status, attempt_count, response_text, error_text,
+                      started_at, finished_at
+               FROM task_agent_runs WHERE task_id=? ORDER BY started_at, role_id""",
+            (task_id,),
+        )
 
     @staticmethod
     async def record_failure(task_id: str) -> TaskStatus:

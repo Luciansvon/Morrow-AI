@@ -1,6 +1,7 @@
 """Role Router: deterministic fast path lalu MiMo semantic fallback."""
 
 import json
+import logging
 
 from src.core.config import settings
 from src.core.types import NormalizedMessage, RoleID
@@ -8,6 +9,8 @@ from src.llm.model_catalog import MODEL_CATALOG
 from src.llm.openrouter import openrouter_client
 from src.llm.usage_meter import usage_meter
 from src.routing.fast_path import fast_path_router
+
+logger = logging.getLogger(__name__)
 
 ROUTER_SYSTEM_PROMPT = """Anda adalah Role Router Morrow. Pilih TEPAT SATU primary owner.
 manager: koordinasi, planning, task, jadwal, operasi.
@@ -43,11 +46,21 @@ class RoleRouter:
             settings.max_router_output_tokens,
         )
         if estimated_cost > settings.budget_routing_per_message:
-            return RoleID.MANAGER, "Fallback Manager karena estimasi biaya router melewati budget"
+            logger.warning(
+                "role_router_budget_fallback group_id=%s message_id=%s estimated_cost=%s budget=%s",
+                message.group_id,
+                message.message_id,
+                estimated_cost,
+                settings.budget_routing_per_message,
+            )
+            return RoleID.MANAGER, "Fallback Manager: estimasi biaya router melewati budget"
 
         try:
             res = await openrouter_client.chat_completion(
-                messages=[{"role": "system", "content": ROUTER_SYSTEM_PROMPT}, {"role": "user", "content": content}],
+                messages=[
+                    {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
+                    {"role": "user", "content": content},
+                ],
                 model=MODEL_CATALOG["mimo_v2_5"].model_id,
                 reasoning_effort="off",
                 temperature=0.0,
@@ -64,11 +77,32 @@ class RoleRouter:
             confidence = float(data.get("confidence", 0.0) or 0.0)
             if owner in {r.value for r in RoleID} and confidence >= 0.55:
                 return RoleID(owner), f"Router Semantik: {data.get('reason', 'intent')}"
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
-        except Exception:
-            pass
-        return RoleID.MANAGER, "Fallback aman ke Manager"
+            logger.warning(
+                "role_router_low_confidence group_id=%s message_id=%s owner=%s confidence=%s",
+                message.group_id,
+                message.message_id,
+                owner,
+                confidence,
+            )
+            return RoleID.MANAGER, (
+                f"Fallback Manager: router confidence rendah ({confidence:.2f})"
+            )
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            logger.warning(
+                "role_router_parse_failure group_id=%s message_id=%s error=%s",
+                message.group_id,
+                message.message_id,
+                exc.__class__.__name__,
+            )
+            return RoleID.MANAGER, f"Fallback Manager: router parse failure ({exc.__class__.__name__})"
+        except Exception as exc:
+            logger.exception(
+                "role_router_runtime_failure group_id=%s message_id=%s error=%s",
+                message.group_id,
+                message.message_id,
+                exc.__class__.__name__,
+            )
+            return RoleID.MANAGER, f"Fallback Manager: router runtime failure ({exc.__class__.__name__})"
 
 
 role_router = RoleRouter()

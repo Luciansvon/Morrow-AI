@@ -88,8 +88,11 @@ class IdempotentToolExecutor:
 
         output_trust = registered.output_trust if registered else "untrusted"
         observation_provenance = provenance_for_tool(tool_name, output_trust, details={"classification": classification, "capability": capability}).to_dict()
+        call_parameters = dict(parameters)
+        if registered and registered.domain == "browser" and capability == "commit":
+            call_parameters["_approved"] = bool(is_approved)
         try:
-            result = await func(**parameters)
+            result = await func(**call_parameters)
             await self._finish(execution_id, status="succeeded", result=result, provenance=observation_provenance)
             return {"success": True, "execution_id": execution_id, "result": result, "provenance": observation_provenance, "retry_allowed": retry_safe}
         except UnknownExternalResultError as exc:
