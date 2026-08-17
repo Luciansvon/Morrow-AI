@@ -24,7 +24,7 @@ class IntentDetector:
         (
             r"\b(hitung|cek|analisis|buat|susun|bantu|evaluasi|baca|rangkum|hapus|"
             r"bandingkan|kerjakan|tinjau|jadwalkan|prioritas|launch|strategi|audit|riset|"
-            r"cari|nilai|beri|kasih|perbaiki|fix|debug|uji|test)\b"
+            r"cari|nilai|beri|perbaiki|fix|debug|uji|test)\b"
         ),
     ]
 
@@ -52,8 +52,10 @@ class IntentDetector:
             "cancel",
             (
                 r"^\s*/(?:cancel|stop)(?:@\w+)?\s*$",
-                CONTROL_LEAD + r"(?:stop|berhenti|hentikan|batalkan)\b.*$",
-                CONTROL_LEAD + r"batal(?:\s+aja)?\b.*$",
+                CONTROL_LEAD + r"(?:stop|berhenti|hentikan)\b.*$",
+                CONTROL_LEAD + r"batalkan\s+(?:semua|seluruh)(?:\s+(?:task|tugas|otomatisasi))?\b.*$",
+                CONTROL_LEAD + r"batal(?:\s+aja)?\s+(?:semua|seluruh)(?:\s+(?:task|tugas|otomatisasi))?\b.*$",
+                CONTROL_LEAD + r"batalkan\s+(?:task\s+)?task_[a-z0-9_-]+\b.*$",
                 CONTROL_LEAD + r"jangan\s+(?:di)?lanjut(?:kan)?\b.*$",
                 CONTROL_LEAD + r"jangan\s+diteruskan\b.*$",
             ),
