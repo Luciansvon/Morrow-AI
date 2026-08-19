@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from src.core.config import settings
-from src.core.types import MemoryItem, RoleID
+from src.core.types import MemoryItem, MemoryScope, RoleID
 from src.memory.embeddings import memory_embedding_provider
 from src.storage.sqlite import db
 
@@ -28,7 +28,7 @@ class MemoryVectorIndex:
         memory_id: str,
         group_id: str,
         scope: str,
-        role_id: str,
+        partition_id: str,
         content_hash: str,
         embedding: list[float],
     ) -> None:
@@ -59,7 +59,7 @@ class MemoryVectorIndex:
             await conn.execute(
                 """INSERT INTO memory_vec(vector_id, embedding, group_id, scope, role_id)
                    VALUES (?, ?, ?, ?, ?)""",
-                (vector_id, json.dumps(embedding), group_id, scope, role_id),
+                (vector_id, json.dumps(embedding), group_id, scope, partition_id),
             )
 
     async def index_memory(self, item: MemoryItem) -> bool:
@@ -84,12 +84,16 @@ class MemoryVectorIndex:
         )
         if embedding is None:
             return False
+        if item.scope == MemoryScope.USER:
+            partition_id = item.user_id or ""
+        else:
+            partition_id = item.role_id.value if item.role_id else ""
         try:
             await self._upsert_vector(
                 memory_id=item.id,
                 group_id=item.group_id,
                 scope=item.scope.value,
-                role_id=item.role_id.value if item.role_id else "",
+                partition_id=partition_id,
                 content_hash=content_hash,
                 embedding=embedding,
             )
@@ -104,7 +108,7 @@ class MemoryVectorIndex:
         if max_items == 0:
             return 0
         rows = await db.fetch_all(
-            """SELECT m.id, m.group_id, m.scope, m.role_id, m.key, m.value,
+            """SELECT m.id, m.group_id, m.scope, m.role_id, m.user_id, m.key, m.value,
                       vm.content_hash, vm.model, vm.dimensions
                FROM memories m
                LEFT JOIN memory_vector_map vm ON vm.memory_id=m.id
@@ -132,11 +136,16 @@ class MemoryVectorIndex:
         indexed = 0
         for row, embedding in zip(stale, embeddings, strict=True):
             try:
+                partition_id = (
+                    row["user_id"] or ""
+                    if row["scope"] == MemoryScope.USER.value
+                    else row["role_id"] or ""
+                )
                 await self._upsert_vector(
                     memory_id=row["id"],
                     group_id=row["group_id"],
                     scope=row["scope"],
-                    role_id=row["role_id"] or "",
+                    partition_id=partition_id,
                     content_hash=row["new_content_hash"],
                     embedding=embedding,
                 )
@@ -151,15 +160,15 @@ class MemoryVectorIndex:
         embedding: list[float],
         group_id: str,
         scope: str,
-        role_id: str | None,
+        partition_id: str | None,
         limit: int,
     ) -> list[tuple[int, float]]:
-        role_clause = " AND role_id=?" if role_id is not None else ""
+        role_clause = " AND role_id=?" if partition_id is not None else ""
         params: tuple[Any, ...] = (
             json.dumps(embedding),
             group_id,
             scope,
-            *((role_id,) if role_id is not None else ()),
+            *((partition_id,) if partition_id is not None else ()),
             limit,
         )
         rows = await db.fetch_all(
@@ -176,6 +185,8 @@ class MemoryVectorIndex:
         group_id: str,
         role: RoleID,
         limit: int,
+        *,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         if not query.strip() or not settings.memory_semantic_enabled or not db.vector_extension_loaded:
             return []
@@ -191,6 +202,14 @@ class MemoryVectorIndex:
                 role.value,
                 limit,
             )
+            if user_id:
+                candidates += await self._nearest_ids(
+                    embedding,
+                    group_id,
+                    "user",
+                    user_id,
+                    limit,
+                )
         except Exception:
             return []
         if not candidates:
@@ -202,12 +221,17 @@ class MemoryVectorIndex:
         vector_ids = list(best_distance)
         placeholders = ",".join("?" for _ in vector_ids)
         rows = await db.fetch_all(
-            f"""SELECT vm.vector_id, m.id, m.group_id, m.scope, m.role_id,
+            f"""SELECT vm.vector_id, m.id, m.group_id, m.scope, m.role_id, m.user_id,
                        m.key, m.value, m.memory_type
                 FROM memory_vector_map vm
                 JOIN memories m ON m.id=vm.memory_id
-                WHERE vm.vector_id IN ({placeholders})""",
-            tuple(vector_ids),
+                WHERE vm.vector_id IN ({placeholders})
+                  AND (
+                      m.scope='shared'
+                      OR (m.scope='role' AND m.role_id=?)
+                      OR (m.scope='user' AND m.user_id=?)
+                  )""",
+            (*vector_ids, role.value, user_id),
         )
         for row in rows:
             row["semantic_distance"] = best_distance[int(row["vector_id"])]
