@@ -1,370 +1,461 @@
 # 🤖 Morrow AI — Private Multi-Agent Executive Team
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Architecture](https://img.shields.io/badge/Architecture-1%20Backend%20%7C%203%20Telegram%20Bots-success.svg)](docs/ARCHITECTURE.md)
-[![CI](https://img.shields.io/badge/CI-Python%203.11%20%2B%203.12-brightgreen.svg)](.github/workflows/chatgpt-full-fix.yml)
-[![PRD](https://img.shields.io/badge/PRD-v0.2%20traceable-blueviolet.svg)](Morrow_PRD_v0.2_Skill_Based.md)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Stable](https://img.shields.io/badge/stable-v0.2.6-success.svg)](docs/RELEASE_NOTES.md)
+[![v0.3](https://img.shields.io/badge/v0.3-feature--flagged-orange.svg)](AGENTS.md)
+[![Architecture](https://img.shields.io/badge/architecture-one%20backend%20%7C%203%20Telegram%20roles-blueviolet.svg)](docs/ARCHITECTURE.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-**Morrow AI v0.2.4** adalah asisten tim multi-agent privat yang berjalan di satu backend dan tampil sebagai tiga bot Telegram independen: **Manager**, **Marketing**, dan **Advisor**. Setiap pesan memiliki satu primary owner sebelum delegasi, lalu Morrow memasang skill yang relevan, mengambil memori jangka panjang yang relevan, menyediakan tool yang aman, dan menjaga tindakan eksternal di balik approval eksplisit.
+**Morrow AI v0.2.6** adalah sistem asisten multi-agent privat yang menjalankan tiga role AI tetap dalam satu backend: **Manager**, **Marketing**, dan **Advisor**. Telegram adalah transport utama saat ini, bukan batas arsitektur. User dapat bicara langsung ke satu role, beberapa role, atau seluruh tim; untuk pesan biasa tanpa target eksplisit, Morrow memilih satu primary owner agar grup tidak berubah menjadi rapat yang semua pesertanya bicara bersamaan.
 
-Tujuan pengalaman percakapannya bukan membuat user merasa sedang mengoperasikan dashboard chatbot. Morrow harus terasa seperti ngobrol dengan tiga rekan yang punya karakter, gaya humor, dan cara berpikir berbeda, tanpa berpura-pura benar-benar manusia ketika identitasnya ditanya langsung.
+Morrow memisahkan **role authority, persona, skill routing, tool capability, task ownership, memory scope, approval, dan integration layer**. Model boleh pintar. Model tetap tidak diberi izin untuk mengarang otoritasnya sendiri. Sebuah standar yang, tragisnya, juga cukup berguna di organisasi manusia.
 
-Morrow sengaja tidak dibangun sebagai satu chatbot yang sekadar berganti persona. **Role routing, persona, skill routing, tool capability, task ownership, memory scope, dan approval adalah lapisan yang berbeda.**
-
-> **Source of truth:** PRD menjelaskan intent dan batas produk, tests/checks membuktikan konformansi, sedangkan code adalah implementation reality. Jika ketiganya berbeda, perbedaannya harus dilaporkan, bukan disamarkan.
+> **Source of truth:** `AGENTS.md` + PRD/decision docs menjelaskan intent dan invariants, tests/checks membuktikan conformance, dan code adalah implementation reality. README ini hanya mengiklankan capability yang sudah ada atau secara eksplisit diberi label experimental/planned.
 
 ---
 
-## 🌟 Kapabilitas Utama
+## 📌 Status Saat Ini
 
-### 1. 🎭 Tiga Agent Independen + Persona Kultural
+| Area | Status | Keterangan |
+|---|---|---|
+| Core runtime | ✅ Stable baseline | **v0.2.6** |
+| Durable roles | ✅ Aktif | Manager, Marketing, Advisor |
+| Direct role targeting | ✅ Aktif | User dapat mention satu atau beberapa role secara langsung |
+| Collective routing | ✅ Aktif | Mendukung `@semua`, bentuk natural seperti `semua ...`, dan multi-role addressing |
+| Telegram reply continuity | ✅ Aktif | Reply chain membawa role/thread/root-request context |
+| Reliable Action Layer | ✅ Aktif | Progressive tool discovery, journal, approval, idempotency, provenance |
+| Browser automation | ✅ Aktif, opt-in | `agent-browser` default production backend |
+| Hybrid memory | ✅ Aktif | SQLite + FTS5 + optional `sqlite-vec` + Markdown mirror |
+| User-private memory boundary | ✅ Aktif | User memory dibedakan dari shared group memory |
+| OpenViking adapter | 🧪 Experimental | Feature-flagged, default OFF |
+| Immich adapter | 🧪 Experimental | Feature-flagged, default OFF |
+| v0.3 orchestrator path | 🧪 Migration boundary | Default OFF; v0.2.6 path tetap authoritative |
+| Maintenance agent | 🗺️ Belum runtime | Belum menjadi durable role pada source saat ini |
+| Temporal | ⏸️ Deferred | Tidak masuk scope migrasi saat ini |
 
-- **Manager**: koordinasi, prioritas, task/dependency, progress, dan delegasi. Persona kultural **Millennial Indonesia / early-internet native**.
-- **Marketing**: campaign, positioning, market/customer insight, content, dan measurement. Persona kultural **Gen Z Indonesia / modern-internet native**.
-- **Advisor**: decision analysis, risk, trade-off, scenario, dan recommendation. Persona **older Indonesian / Boomer-inspired cultural lens** tanpa menganggap semua orang tua sebagai stereotip yang sama.
-- Semua role memakai satu orchestrator, task engine, approval gateway, storage, dan subsystem bersama tanpa mengubah identitas role masing-masing.
+---
 
-Persona bukan daftar slang. Setiap profile membawa pola komunikasi, humor, cultural memory, dan respons lintas-generasi. Dalam obrolan santai, agent boleh salah menangkap referensi generasi lain atau mengaitkannya dengan zamannya sendiri. Dalam pekerjaan serius, akurasi dan safety selalu mengalahkan gimmick persona.
+## 👥 Tiga Role Morrow
 
-Aturan percakapan natural yang berlaku untuk semua role:
+### Manager — Pragmatic Action Manager
 
-- tidak membuka jawaban dengan disclaimer AI tanpa alasan;
-- tidak menyebut nama role, tool, atau proses internal pada setiap balasan;
+- Domain: koordinasi, prioritas, task ownership, blocker, delegasi, dan next action.
+- Persona behavioral: **Bob Sadino-inspired**, tanpa impersonation.
+- Default lens: *Apa keputusan dan apa yang kita kerjakan berikutnya?*
+- Framework: `Problem → Simplify → Decide → Assign → Execute → Observe → Adjust`.
+- Jika Manager ikut dalam kerja multi-agent, Manager memegang coordination authority. Authority ini tetap berada di bawah user, permission, safety, dan approval policy.
+
+### Marketing — Technical Growth Strategist
+
+- Domain: audience, positioning, market/customer insight, campaign, content, experiment, dan measurement.
+- Persona behavioral: **Dharmesh Shah-inspired**, tanpa impersonation.
+- Default lens: *Bagaimana kita tahu ini benar dan bagaimana mengujinya?*
+- Framework: `Audience → Problem → Insight → Hypothesis → Experiment → Metric → Learning`.
+- Fokus pada evidence dan eksperimen, bukan hype atau vanity metric.
+
+### Advisor — Visionary Humanist Advisor
+
+- Domain: decision analysis, scenario, risk, trade-off, blind spot, people/customer impact, dan arah jangka panjang.
+- Persona behavioral: **Jack Ma-inspired**, tanpa impersonation.
+- Default lens: *Ke mana keputusan ini membawa customer, people, trust, dan arah jangka panjang?*
+- Framework: `Purpose → People → Future → Opportunity → Risk → Perspective → Advice`.
+- Advisor dapat menantang arah dan memberi alternatif, tetapi tidak mengambil alih keputusan operasional Manager.
+
+Persona adalah behavioral contract, bukan cosplay. Pada pekerjaan serius atau berisiko tinggi, akurasi, evidence, dan safety mengalahkan humor atau gaya karakter.
+
+---
+
+## 🧭 Routing & Multi-Agent Coordination
+
+Morrow tidak memakai aturan “semua pesan harus lewat Manager”. Routing saat ini mendukung direct specialist targeting dan collective addressing.
+
+### Direct targeting
+
+Contoh:
+
+```text
+Marketing, cek positioning produk ini.
+Advisor, pre-mortem rencana ekspansi ini.
+Manager, prioritaskan backlog minggu ini.
+Manager dan Marketing, cek launch ini.
+```
+
+Jika role disebut secara eksplisit sebagai target, Morrow menghormati target tersebut. Bare role words yang hanya menjadi objek kalimat tidak otomatis dianggap addressing, sehingga kalimat seperti `apa bedanya manager dan advisor` tidak berubah menjadi fan-out tanpa alasan.
+
+### Collective targeting
+
+Contoh:
+
+```text
+@semua analisis ini.
+semua tolong cek rencana launch.
+terimakasih semua
+```
+
+Morrow membedakan collective addressing dari object quantifier. `cek semua produk` berarti cek seluruh produk, bukan panggil seluruh agent. Karena ternyata kata “semua” memang mampu menciptakan lebih banyak masalah routing daripada yang selayaknya dilakukan satu kata.
+
+### Default owner
+
+Untuk request biasa tanpa target eksplisit, semantic routing memilih **satu primary owner**. Jika task analysis membutuhkan collaborator tambahan, Morrow dapat menjalankan collaboration flow secara bounded.
+
+### Durable collective completion
+
+Kerja multi-agent memakai per-agent execution ledger. Task tidak boleh ditandai `done` hanya karena satu agent menjawab. Jika target wajib gagal, task tetap `blocked`/belum lengkap dan contributor lain tetap dapat dicoba.
+
+Current stable v0.2 path tidak diiklankan sebagai unrestricted parallel swarm. Concurrency yang lebih agresif adalah bagian dari arah migrasi v0.3 dan harus tetap tunduk pada ownership, budget, loop guard, approval, dan evidence.
+
+---
+
+## 🎭 Natural Telegram Behavior
+
+Morrow memakai paragraph-first response contract agar jawaban tidak otomatis berubah menjadi laporan korporat penuh heading, bold, dan checklist setiap kali user hanya bertanya satu kalimat.
+
+Aturan umum:
+
 - pesan pendek boleh dibalas pendek;
-- obrolan santai tidak dipaksa menjadi memo ber-heading;
-- slang, emoji, meme, dan nostalgia tidak boleh di-spam;
-- tidak mengarang pengalaman fisik atau masa lalu;
-- jika ditanya langsung apakah manusia/bot/AI, agent menjawab jujur bahwa ia agent AI Morrow.
+- heading/list hanya dipakai saat benar-benar membantu;
+- agent tidak mengulang isi gambar/file secara panjang sebelum menganalisis;
+- role/tool/routing internal tidak diumumkan tanpa kebutuhan;
+- agent tidak mengarang pengalaman pribadi atau mengaku sebagai tokoh inspirasinya;
+- jika ditanya apakah manusia/bot/AI, agent menjawab jujur bahwa ia agent AI Morrow;
+- serious/high-risk context menekan humor dan gimmick persona.
 
-### 2. 🧩 Modular Skill System — 16 Skill
+Telegram activity preview dan `typing` action digunakan secara best-effort saat reasoning/tool work berjalan. Kegagalan activity UI tidak boleh menggagalkan jawaban utama.
 
-Skill dipilih **setelah role owner ditentukan**. Artinya skill memperluas kemampuan role, tetapi tidak pernah mengubah Manager menjadi Marketing atau Advisor hanya karena modelnya mampu menjawab.
+---
 
-| Role | Skill |
+## 🧩 Modular Skill System
+
+Skill dipilih **setelah role owner ditentukan**. Skill memperluas kemampuan role, tetapi tidak mengubah authority role.
+
+| Role | Core skills |
 |---|---|
 | Manager | `task_coordination`, `prioritization_triage`, `dependency_recovery`, `progress_review` |
 | Marketing | `campaign_strategy`, `audience_positioning`, `market_research`, `content_strategy`, `marketing_measurement` |
 | Advisor | `risk_decision_analysis`, `risk_premortem`, `scenario_planning`, `recommendation_synthesis` |
 | Shared | `document_inspection`, `evidence_synthesis`, `assumption_audit` |
 
-Katalog skill berada di [`skills/`](skills/). Setiap skill adalah artefak `SKILL.md` dengan frontmatter ringan seperti `name`, `description`, `eligible_roles`, `triggers`, serta metadata opsional `tools` dan `references`.
+Katalog berada di [`skills/`](skills/). Setiap skill menggunakan `SKILL.md` dengan metadata seperti `name`, `description`, `eligible_roles`, `triggers`, serta references/tool requirements bila memang tersedia di runtime.
 
-Router skill:
+Skill tidak boleh mengiklankan tool backend yang tidak benar-benar terdaftar. Tool discovery adalah exposure capability, bukan permission.
 
-1. menerima role yang sudah dipilih oleh role router;
-2. hanya mempertimbangkan skill yang eligible untuk role itu;
-3. memberi ranking pada trigger yang cocok;
-4. memasang maksimal **3 skill berbasis teks** per pesan agar context tetap bounded;
-5. menambahkan `document_inspection` secara terpisah ketika ada attachment;
-6. memakai core role skill sebagai fallback jika tidak ada trigger spesifik yang cocok.
+---
 
-Detail katalog dan aturan authoring ada di [`skills/README.md`](skills/README.md).
+## 🛠️ Tool Runtime & Reliable Action Layer
 
-### 3. 🔎 Agent Tool Runtime & Browser Automation
-
-Morrow menghubungkan agent runtime ke tool layer secara nyata. Tool dibagi berdasarkan siapa yang mengeksekusi dan apakah ada side effect.
+Morrow memiliki bounded tool loop, progressive discovery, execution journal, schema validation, provenance, dan fail-closed policy.
 
 | Capability | Implementasi | Approval |
 |---|---|---|
-| Web search | OpenRouter server tool `openrouter:web_search` | Tidak, read-only |
-| Web fetch | OpenRouter server tool `openrouter:web_fetch` | Tidak, read-only |
-| Current datetime | OpenRouter server tool `openrouter:datetime` | Tidak |
-| Calculator | Local user-defined tool `calculate` dengan AST evaluator, tanpa `eval()` | Tidak |
-| File/document inspection | Pipeline native parser/OCR/vision yang sudah ada | Tidak |
-| Browser automation | Provider-neutral contract di `src/browser/` (`agent-browser`) | READ/PREPARE tidak; COMMIT wajib approval |
-| Email/calendar/social/transaction | External-action tool policy | Wajib approval |
+| Web search | OpenRouter server tool | Tidak, read-only |
+| Web fetch | OpenRouter server tool | Tidak, read-only |
+| Current datetime | Local deterministic tool / configured timezone | Tidak |
+| Calculator | Local AST evaluator | Tidak |
+| File/document inspection | Native parser + OCR/vision pipeline | Tidak |
+| Browser READ | `agent-browser`: open/snapshot/screenshot | Tidak |
+| Browser PREPARE | fill/type/select/check/uncheck/scroll | Tidak |
+| Browser COMMIT | click/press yang dapat memicu side effect | **Wajib approval** |
+| External actions | email/calendar/social/transaction dan capability sejenis | **Wajib approval** |
 
-OpenRouter server tools dijalankan server-side dan model dapat memutuskan sendiri kapan perlu search/fetch/time. User-defined local tools memakai bounded tool loop di `AgentRuntime`, dieksekusi lewat `tool_executor`, dan tetap tunduk pada fail-closed `tool_policy`.
+### Guardrails tool
 
-Browser automation menggunakan runtime `agent-browser` (Chromium-based) dengan isolasi *task-space* per sesi, fail-closed startup preflight, dan pemisahan pipa proses subprocess yang stabil di Windows/Linux/macOS.
+- unknown/unclassified tool gagal secara fail-closed;
+- public JSON Schema divalidasi lagi di executor boundary sebelum function dipanggil;
+- progressive discovery membatasi schema yang diekspos ke model;
+- execution journal menyimpan policy decision, status, provenance, approval link, side-effect flag, dan retry safety;
+- external/COMMIT action tidak dieksekusi hanya karena model mengeluarkan tool call;
+- approval exact-bound ke parameter/state dan one-shot;
+- browser COMMIT juga terikat page/form state fingerprint;
+- outcome eksternal yang `unknown` tidak di-retry otomatis.
 
-11 browser capabilities diklasifikasikan secara ketat:
+---
 
-- **`READ`** (`browser_open`, `browser_snapshot`, `browser_screenshot`): membaca atau mengambil snapshot struktur halaman web tanpa mutasi eksternal (tidak memerlukan approval).
-- **`PREPARE`** (`browser_fill`, `browser_type`, `browser_select`, `browser_check`, `browser_uncheck`, `browser_scroll`): memodifikasi state lokal formulir/halaman secara persisten dalam task-space terisolasi (tidak memerlukan approval).
-- **`COMMIT`** (`browser_click`, `browser_press`): menekan tombol atau aksi pengiriman formulir yang dapat memicu side effect eksternal (**wajib melewati approval gateway**). Approval terikat sidik jari (*state hash*) halaman saat dibuat; jika isi formulir berubah sebelum persetujuan, approval lama otomatis digugurkan demi keamanan (*stale state invalidation*).
+## 🌐 Browser Automation
 
-### 4. 🧠 Hybrid Long-Term Memory yang Hemat RAM
+Backend produksi default adalah **`agent-browser`**, tetap opt-in melalui `BROWSER_ENABLED`.
 
-SQLite tetap menjadi **source of truth** untuk durable memory. Retrieval menggunakan kombinasi beberapa jalur yang fail-soft:
+Morrow mempertahankan pemisahan tiga kelas aksi:
 
-- **Pinned structured truth** untuk keputusan dan constraint penting.
-- **FTS5 lexical retrieval** untuk kecocokan kata/frasa.
-- **Semantic retrieval** dengan embedding + `sqlite-vec` bila tersedia.
-- **Reciprocal Rank Fusion (RRF)** untuk menggabungkan lexical dan semantic candidates.
-- **Role scope + shared scope** agar agent tidak menerima seluruh raw history role lain.
-- **Memory audit** menyimpan provenance perubahan nilai.
-- **Markdown mirror** di `data/memory/` untuk inspeksi manusia; SQLite tetap sumber kebenaran dan Morrow tidak bergantung pada Obsidian.
+1. **READ** — membaca halaman tanpa mutasi eksternal.
+2. **PREPARE** — menyiapkan state form/page dalam isolated task-space.
+3. **COMMIT** — aksi yang dapat memicu side effect dan wajib approval.
 
-Jika semantic index atau Markdown mirror gagal, write ke durable structured memory tetap tidak boleh ikut gagal.
+Task-space browser diisolasi per pekerjaan. Model tidak dapat memilih internal task-space sesuka hati. Browser intent juga tidak boleh diam-diam disubstitusi menjadi simple `web_fetch` lalu diklaim sebagai browser interaktif.
 
-### 5. 🗣️ Routing, Social Chat, dan Multi-Agent Coordination
+---
 
-- Explicit role mention, reply-aware routing, known ownership, dan fast-path dipakai saat sinyalnya jelas.
-- Ambiguous work tetap memilih **tepat satu primary owner** sebelum delegasi.
-- Sapaan sederhana seperti `halo semua` tetap memakai zero-token fast path.
-- Banter sosial yang lebih kaya seperti tawa, candaan, atau percakapan santai diarahkan ke persona-aware runtime dengan workload `casual`, sehingga agent tidak terdengar seperti template greeting statis.
-- Agent-to-agent discussion dibatasi oleh loop guard agar percakapan otomatis tidak berubah menjadi rapat tanpa akhir, sebuah pencapaian yang bahkan manusia belum universal kuasai.
+## 🧠 Hybrid Long-Term Memory
 
-### 6. ⏳ Telegram Activity Preview
+SQLite tetap menjadi authoritative local source pada baseline v0.2.6.
 
-Saat agent membutuhkan reasoning/tool work, bot terkait menampilkan pesan sementara seperti:
+Retrieval menggabungkan:
 
-- Manager: `bentar, lagi gue susun biar nggak muter-muter...`
-- Marketing: `bentar, lagi gue cari angle yang paling kena...`
-- Advisor: `sebentar, saya cek celahnya dulu...`
+- structured durable memory;
+- FTS5 lexical search;
+- semantic retrieval dengan embeddings + `sqlite-vec` bila tersedia;
+- Reciprocal Rank Fusion untuk menggabungkan candidate;
+- relevance gating untuk mengurangi memory contamination;
+- Markdown mirror untuk inspeksi manusia.
 
-Adapter Telegram juga mengirim `typing` action bila tersedia. Activity message bersifat best-effort dan dihapus ketika pekerjaan selesai. Kegagalan menghapus activity **tidak boleh menggagalkan jawaban utama**.
+### Memory scopes
 
-### 7. 📁 File Intake Pra-Routing
+- **USER** — private memory per user di dalam group boundary.
+- **ROLE** — memory yang scoped ke role.
+- **SHARED** — keputusan/fakta/status yang memang layak dibagi dalam group.
 
-Attachment diproses sebelum reasoning role-specific sehingga router dan agent mendapat konteks hasil ekstraksi, bukan sekadar nama file.
+Explicit save harus benar-benar durable sebelum agent mengakui bahwa informasi sudah tersimpan. Assistant speculation, external claims yang belum terverifikasi, dan angka yang hanya muncul dari jawaban model tidak boleh otomatis menjadi durable user memory.
 
-Format MVP: `PDF`, `DOCX`, `XLSX`, `CSV`, `TXT`, `MD`, `PPTX`, `PNG`, `JPG/JPEG`, dan `WEBP`.
+---
 
-Prinsipnya:
+## 📁 File Intake Pra-Routing
 
-- structured formats memakai parser native jika struktur dapat dibaca;
-- spreadsheet tidak di-OCR jika workbook dapat dibaca secara native;
-- PDF dengan text layer memakai text extraction;
+Attachment diproses sebelum role reasoning sehingga router mendapat konteks isi file, bukan cuma nama file.
+
+Format MVP:
+
+`PDF`, `DOCX`, `XLSX`, `CSV`, `TXT`, `MD`, `PPTX`, `PNG`, `JPG/JPEG`, `WEBP`.
+
+Prinsip utama:
+
+- structured format memakai parser native jika memungkinkan;
+- spreadsheet tidak di-OCR jika workbook dapat dibaca langsung;
+- PDF text-layer memakai text extraction;
 - scanned PDF dapat fallback ke render + OCR/vision;
-- OCR dan visual understanding diperlakukan sebagai kemampuan berbeda;
-- isi attachment selalu dianggap **untrusted input** dan tidak otomatis masuk durable memory.
+- OCR dan visual understanding diperlakukan sebagai capability berbeda;
+- file content adalah untrusted input dan tidak otomatis masuk durable memory;
+- resource caps membatasi ukuran attachment, jumlah halaman OCR, archive expansion, spreadsheet rows/cells, image pixels, dan extracted context.
 
-### 8. 🛡️ Approval, Safety, dan Idempotensi
+---
 
-- Email/message eksternal, calendar mutation, posting sosial, transaksi, browser COMMIT, destructive external-data change, dan account modification memerlukan approval eksplisit yang scoped ke action tersebut.
-- Parameter action difingerprint sehingga perubahan parameter tidak diam-diam memakai approval lama.
-- Human-instruction conflict dapat menjeda task terkait dan meminta resolusi.
-- Handoff chain mencegah task kembali ke agent yang sudah pernah dicoba.
-- Duplicate delivery dan concurrency diperlakukan sebagai masalah state, bukan sesuatu yang diharapkan hilang karena keberuntungan.
+## 🛡️ Task, Event, Approval & Concurrency Safety
+
+Hardening v0.2.6 + audit fixes menambahkan boundary yang lebih ketat untuk state yang mudah rusak saat concurrency, crash, atau duplicate delivery muncul.
+
+- `processed_events` menggunakan durable ownership/lease dengan owner token sehingga stale worker tidak boleh menyelesaikan attempt milik worker baru;
+- task dependency benar-benar memblokir start sebelum dependency selesai;
+- terminal task tidak boleh dibuka kembali melalui unconditional status update;
+- task model memakai persisted timestamps dari database;
+- pause/cancel menahan stale in-flight completion melalui generation/ownership boundary dan membatalkan agent run yang relevan;
+- collective task memakai durable `task_agent_runs` untuk tracking per target;
+- approval execution memiliki lease/recovery behavior sehingga crash tidak memicu blind replay side effect;
+- control intent seperti `stop`, `batal`, `jangan lanjut`, pause, dan resume diperlakukan berbeda dari work prompt biasa.
+
+---
+
+## 🧪 v0.3 Migration Boundary
+
+Repo saat ini sudah menyiapkan integration boundary v0.3, tetapi **default tetap v0.2.6**.
+
+```env
+MORROW_V03_ORCHESTRATOR_ENABLED=false
+OPENVIKING_ENABLED=false
+IMMICH_ENABLED=false
+```
+
+### OpenViking
+
+Adapter berada di `src/integrations/openviking.py` dan diposisikan untuk context/memory/knowledge/skills/experience infrastructure.
+
+Prinsip:
+
+- feature-flagged;
+- scoped account/user headers;
+- tidak menjadi approval authority;
+- tidak menggantikan role authority Morrow Core;
+- saat disabled, adapter fail closed;
+- migrasi tidak boleh menciptakan dua semantic-memory authority tanpa kontrak yang jelas.
+
+### Immich
+
+Adapter berada di `src/integrations/immich.py` dan diposisikan untuk media asset search/index/metadata.
+
+Prinsip:
+
+- media binary tetap milik Immich;
+- Immich bukan general conversational memory;
+- ownership scope tidak boleh dikontrol bebas oleh caller/model;
+- API key untuk adapter saat ini sebaiknya read-only;
+- saat disabled, adapter fail closed atau runtime tetap memakai local attachment path sesuai capability yang diminta.
+
+### Orchestration direction
+
+Arah v0.3 menempatkan orchestration framework sebagai **execution layer**, bukan product brain. Morrow Core tetap authoritative untuk permission, routing semantics, role authority, task behavior, approval, external-action authority, dan safety invariants.
+
+Microsoft Agent Framework adalah arah orchestrator yang dipilih pada migration contract, tetapi bukan alasan untuk mengganti seluruh Morrow Core sekaligus. Existing v0.2.6 path wajib tetap bekerja saat feature flag OFF.
+
+**Temporal masih deferred.** Jangan ditambahkan hanya karena diagram arsitektur terasa kurang ramai.
 
 ---
 
 ## 🏛️ Arsitektur Ringkas
 
 ```text
-                          Private Telegram Group
-             ┌────────────────┬────────────────┬────────────────┐
-             │  Manager Bot   │ Marketing Bot  │  Advisor Bot   │
-             └────────┬───────┴───────┬────────┴───────┬────────┘
-                      └───────────────┼────────────────┘
-                                      ▼
-                           ONE MORROW BACKEND
-                                      │
-                 ┌────────────────────┼────────────────────┐
-                 ▼                    ▼                    ▼
-          Access + Dedup        File Intake         Addressing/Intent
-                 └────────────────────┼────────────────────┘
-                                      ▼
-                              System Orchestrator
-                                      │
-                              Primary Role Owner
-                                      │
-                   ┌──────────────────┼──────────────────┐
-                   ▼                  ▼                  ▼
-              Persona Layer       Skill Router       Activity UI
-                   └──────────────────┼──────────────────┘
-                                      ▼
-            Manager Agent / Marketing Agent / Advisor Agent
-                                      │
-                         Bounded Agent Tool Loop
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-              ▼                       ▼                       ▼
-      OpenRouter Server Tools    Local Internal Tools    External Tools
-      search/fetch/datetime      calculator, future     approval required
-              └───────────────────────┼───────────────────────┘
-                                      ▼
-        ┌────────────────────────────────────────────────────────┐
-        │ Shared subsystems                                      │
-        │ • Task engine + bounded handoff/retry                  │
-        │ • Hybrid long-term memory: SQLite + FTS5 + sqlite-vec │
-        │ • Markdown memory mirror                              │
-        │ • Modular SKILL.md catalog                            │
-        │ • Approval gateway + idempotent tool policy           │
-        │ • Browser backend contract                            │
-        │ • Conflict detector + loop guard                      │
-        └────────────────────────────────────────────────────────┘
+                         Private Telegram Group
+            ┌────────────────┬────────────────┬────────────────┐
+            │  Manager Bot   │ Marketing Bot  │  Advisor Bot   │
+            └────────┬───────┴───────┬────────┴───────┬────────┘
+                     └───────────────┼────────────────┘
+                                     ▼
+                          ONE MORROW BACKEND
+                                     │
+        ┌────────────────────────────┼────────────────────────────┐
+        ▼                            ▼                            ▼
+ Access + Event Lease         File Intake                Addressing/Intent
+        └────────────────────────────┼────────────────────────────┘
+                                     ▼
+                           System Orchestrator
+                                     │
+                         Primary Owner / Coordinator
+                                     │
+              ┌──────────────────────┼──────────────────────┐
+              ▼                      ▼                      ▼
+        Persona Layer           Skill Router          Task / Run Ledger
+              └──────────────────────┼──────────────────────┘
+                                     ▼
+                     Bounded Agent + Tool Runtime
+                                     │
+          ┌──────────────────────────┼──────────────────────────┐
+          ▼                          ▼                          ▼
+ OpenRouter Server Tools      Local/Internal Tools      External / COMMIT
+ search/fetch                 calculator/browser       approval required
+          └──────────────────────────┼──────────────────────────┘
+                                     ▼
+ ┌────────────────────────────────────────────────────────────────────┐
+ │ Shared subsystems                                                  │
+ │ • SQLite task/event/approval/tool journal                         │
+ │ • USER / ROLE / SHARED hybrid memory                             │
+ │ • FTS5 + optional sqlite-vec + Markdown mirror                   │
+ │ • Modular SKILL.md catalog                                      │
+ │ • Conflict detector + loop guard + usage budget                 │
+ │ • Feature-flagged OpenViking / Immich integration adapters      │
+ └────────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## 🧩 Menambah Skill Baru
-
-Buat folder baru di `skills/<role-or-shared>/<skill-name>/SKILL.md`.
-
-Contoh minimum:
-
-```md
----
-name: example_skill
-description: Kapan dan untuk apa skill ini digunakan.
-eligible_roles: [marketing]
-triggers: [contoh trigger, istilah spesifik]
-references: [references/checklist.md]
----
-## Tujuan
-Jelaskan outcome skill secara sempit dan terukur.
-
-## Workflow
-1. Gunakan fakta yang tersedia.
-2. Bedakan fakta, asumsi, dan unknown bila relevan.
-3. Jangan mengklaim side effect eksternal berhasil tanpa backend.
-
-## Output
-Definisikan bentuk output yang diharapkan.
-```
-
-Aturan desain utama:
-
-- satu skill untuk satu workflow yang jelas;
-- trigger harus cukup spesifik agar tidak menyalakan terlalu banyak skill;
-- shared skill dipakai hanya untuk capability yang benar-benar lintas-role;
-- skill tidak boleh melewati approval, role boundary, attachment trust boundary, atau backend guardrail;
-- skill baru harus memiliki test eligibility/routing sebelum dianggap stabil.
-
----
-
-## 🛠️ Menambah Tool Baru
-
-Tool lokal didaftarkan ke `src/tools/registry.py` dengan JSON Schema parameter dan diklasifikasikan di `src/tools/policy.py`.
-
-Prinsip wajib:
-
-1. tool baru **tidak boleh dapat dieksekusi** sebelum masuk policy;
-2. read-only/internal tool dapat dieksekusi langsung;
-3. external side effect wajib melalui approval + idempotency;
-4. jangan memberi LLM raw shell/code execution hanya karena mudah diimplementasikan;
-5. tool loop dibatasi `MAX_TOOL_ROUNDS` agar agent tidak berputar tanpa akhir.
-
-Server tools OpenRouter dapat dinyalakan/dimatikan melalui environment tanpa registrasi local executor.
 
 ---
 
 ## 🚀 Quickstart
 
-### 1. Requirements
+### Requirements
 
 - Python 3.11+
 - Git
-- Node.js + npm (untuk PM2 process manager & runtime `agent-browser`)
-- Google Chrome (untuk browser automation backend)
+- Node.js + npm
+- Google Chrome / Chromium-compatible runtime untuk browser automation
+- 3 Telegram bot tokens jika menjalankan semua durable role
 
-### 2. Clone & install
+### Clone & install
 
 ```powershell
 git clone https://github.com/Luciansvon/Morrow-AI.git
 cd Morrow-AI
 python -m pip install -e ".[dev]"
 npm install -g pm2 agent-browser
+agent-browser install
 ```
 
-Install editable membuat command **`MORROW`** tersedia di terminal. Untuk runtime tanpa tool development, gunakan `python -m pip install -e .`.
+Install editable membuat command **`MORROW`** tersedia di terminal. Untuk runtime tanpa dev dependencies:
 
-### 3. Environment
+```powershell
+python -m pip install -e .
+```
+
+### Environment
 
 ```powershell
 cp .env.example .env
 ```
 
-Minimum setup:
+Minimum baseline:
 
 ```env
 OPENROUTER_API_KEY=your_openrouter_api_key_here
-
-WEB_SEARCH_ENABLED=true
-WEB_FETCH_ENABLED=true
-DATETIME_TOOL_ENABLED=true
 MORROW_TIMEZONE=Asia/Jakarta
-
-# Browser Automation (agent-browser)
-BROWSER_ENABLED=true
-BROWSER_BACKEND=agent-browser
-BROWSER_AGENT_EXECUTABLE=agent-browser
 
 TELEGRAM_MANAGER_BOT_TOKEN=your_manager_bot_token
 TELEGRAM_MARKETING_BOT_TOKEN=your_marketing_bot_token
 TELEGRAM_ADVISOR_BOT_TOKEN=your_advisor_bot_token
-
 TELEGRAM_ALLOWED_GROUP_IDS=-100xxxxxxxxxx
 TELEGRAM_WHITELIST_USER_IDS=xxxxxxxxx
 
 DATABASE_PATH=./data/morrow.db
 STORAGE_DIR=./data/storage
 MEMORY_VAULT_DIR=./data/memory
-MEMORY_SEMANTIC_ENABLED=true
-MEMORY_HYBRID_TOP_K=8
 ```
 
-Web search/fetch memakai OpenRouter server tools sehingga **tidak memerlukan API key search provider tambahan**. Konfigurasi result cap, context size, fetch token limit, tool rounds, embedding memory, timeout, model routing, dan limit lainnya tersedia di `.env.example` / `src/core/config.py`.
+Optional browser:
 
-### 4. BotFather
+```env
+BROWSER_ENABLED=true
+BROWSER_BACKEND=agent-browser
+BROWSER_AGENT_EXECUTABLE=agent-browser
+```
+
+Experimental integrations sebaiknya tetap OFF sampai service dan scope access benar-benar disiapkan:
+
+```env
+MORROW_V03_ORCHESTRATOR_ENABLED=false
+OPENVIKING_ENABLED=false
+IMMICH_ENABLED=false
+```
+
+Lihat [`.env.example`](.env.example) untuk seluruh timeout, budget, attachment cap, memory, browser, OpenViking, Immich, dan tool-discovery settings.
+
+### BotFather
 
 Untuk ketiga bot:
 
 - `/setjoingroups` → **Enable**
-- `/setprivacy` → **Disable** agar bot dapat membaca pesan grup yang diperlukan
-- masukkan ketiga bot ke grup yang sudah di-allowlist
+- `/setprivacy` → **Disable** jika bot perlu membaca message group yang bukan direct command/reply
+- tambahkan bot ke group yang sudah di-allowlist
 
-### 5. Test
+### Validation
 
 ```powershell
 ruff check .
+python -m compileall -q src scripts morrow_runtime.py
 pytest -q
+git diff --check
 ```
 
-CI menjalankan Ruff + pytest pada Python **3.11 dan 3.12**.
+CI saat ini menambah compile verification, whitespace/diff check, deterministic audit acceptance tests, full pytest pada Python 3.11/3.12, dan verified-source packaging gate. Release staging juga menolak packaging yang membawa local `.env`.
 
-### 6. Run dengan satu command
+### Run
 
 ```powershell
 MORROW
 ```
 
-Tanpa subcommand, `MORROW` akan start Morrow melalui PM2. Jika proses `morrow` sudah terdaftar, command yang sama akan melakukan restart dengan environment terbaru. Setelah start/restart berhasil, launcher menjalankan `pm2 save`, sehingga daftar proses tersimpan untuk proses resurrection/startup.
-
-PM2 menjalankan hanya **1 instance** Morrow, mematikan file watch, dan memakai exponential restart backoff. Jika polling Telegram gagal sampai runtime keluar, PM2 akan menyalakan proses lagi. Terminal yang dipakai untuk menjalankan `MORROW` boleh ditutup setelah proses aktif.
-
-Command kontrol:
+Tanpa subcommand, launcher start/restart Morrow melalui PM2 dan menyimpan process list.
 
 | Command | Fungsi |
 |---|---|
-| `MORROW` | Start atau restart Morrow lewat PM2, lalu save process list |
-| `MORROW status` | Lihat status proses Morrow |
-| `MORROW logs` | Streaming log PM2 untuk Morrow |
-| `MORROW restart` | Restart manual + update environment |
-| `MORROW stop` | Stop proses dan simpan state PM2 |
-| `MORROW delete` | Hapus proses dari PM2 dan simpan process list baru |
-| `MORROW foreground` | Jalankan langsung tanpa PM2 untuk debugging |
-| `MORROW startup` | Siapkan proses agar dapat dipulihkan setelah reboot/sign-in |
-
-#### Startup setelah reboot
-
-**Windows:** `MORROW startup` membuat Windows Scheduled Task untuk user saat ini. Task menjalankan `pm2 resurrect` setelah user sign-in, memakai process list yang sudah disimpan oleh PM2.
-
-**Linux/macOS:** `MORROW startup` menjalankan `pm2 startup`. PM2 dapat mencetak satu command privileged/sudo yang harus dijalankan sekali sesuai init system mesin tersebut. Process list Morrow sudah disimpan oleh launcher.
-
-Startup normal menginisialisasi database serta long-term memory indexes/mirror sebelum adapter Telegram mulai menerima pesan.
+| `MORROW` | Start/restart lewat PM2 |
+| `MORROW status` | Lihat status proses |
+| `MORROW logs` | Streaming log |
+| `MORROW restart` | Restart + refresh environment |
+| `MORROW stop` | Stop process |
+| `MORROW delete` | Hapus process dari PM2 |
+| `MORROW foreground` | Jalankan tanpa PM2 untuk debugging |
+| `MORROW startup` | Siapkan resurrection/startup setelah reboot/sign-in |
 
 ---
 
-## 💬 Contoh
+## 💬 Contoh Perilaku
 
-| Pesan | Owner / Capability |
+| Pesan | Hasil yang diharapkan |
 |---|---|
-| `halo semua` | zero-token social broadcast, masing-masing role punya gaya sendiri |
-| `Manager, wkwk lu kocak` | Manager persona runtime dalam mode casual |
-| `Manager, prioritaskan backlog ini` | Manager + `prioritization_triage` |
-| `Marketing, cari tren campaign terbaru` | Marketing + `market_research` + web search bila model menilai perlu |
-| `Manager, buka https://example.com lalu rangkum isinya` | Manager + live browser automation (`agent-browser` READ) |
-| `cek isi URL ini` | web fetch bila URL perlu dibaca langsung |
-| `hitung (12500 * 3) + 4500` | local calculator tool |
-| `Advisor, buat pre-mortem rencana ini` | Advisor + `risk_premortem` |
-| `cek asumsi di dokumen ini` + PDF | Role owner + `document_inspection` + `assumption_audit` bila trigger cocok |
-| `semua, bantu strategi launch` | bounded multi-agent collaboration dengan coordinator |
-| `/approve appr_12345` | approval gateway untuk action eksternal / browser COMMIT yang diajukan |
+| `halo semua` | collective social response dengan role persona masing-masing |
+| `Marketing, cari angle launch produk ini` | direct Marketing ownership |
+| `Advisor, cek blind spot keputusan ini` | direct Advisor ownership |
+| `Manager, prioritaskan backlog ini` | direct Manager ownership |
+| `Manager dan Marketing, cek launch ini` | multi-role collaboration; Manager coordinator |
+| `@semua analisis toko Etsy minggu ini` | collective routing ke seluruh durable roles |
+| `cek semua produk` | **bukan** collective addressing; “semua” adalah object quantifier |
+| `Manager, buka https://example.com dan inspect` | browser READ path bila browser enabled |
+| `isi form ini` | browser PREPARE; belum commit eksternal |
+| `klik submit` | browser COMMIT; wajib approval |
+| `catat sebagai keputusan: gunakan veneer walnut` | durable memory write sebelum acknowledgement |
+| `stop` / `batal` | control path, bukan ordinary work prompt |
 
 ---
 
@@ -372,37 +463,65 @@ Startup normal menginisialisasi database serta long-term memory indexes/mirror s
 
 ```text
 Morrow-AI/
+├── AGENTS.md                   # Repository-wide invariants & migration contract
 ├── ecosystem.config.cjs       # PM2 keep-alive / restart policy
-├── scripts/
-│   └── install_pm2_startup.ps1 # Windows startup via Scheduled Task
-├── skills/                    # Katalog 16 modular SKILL.md
+├── Morrow_PRD_v0.2_Skill_Based.md
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── DECISIONS.md
+│   ├── RELEASE_NOTES.md
+│   ├── AUDIT_2026-08-19.md
+│   ├── BUG_BACKLOG.md
+│   └── TESTING_GUIDE.md
+├── scripts/                    # Setup, validation, release, acceptance helpers
+├── skills/
 │   ├── manager/
 │   ├── marketing/
 │   ├── advisor/
 │   └── shared/
-├── docs/                      # Architecture, decisions, testing, worklog, backlog
 ├── src/
-│   ├── adapters/              # Telegram multi-bot + CLI + activity lifecycle
-│   ├── agents/                # Independent role runtimes + bounded tool loop
-│   ├── approval/              # Scoped external-action approval
-│   ├── browser/               # Provider-neutral browser automation contract
-│   ├── core/                  # Orchestrator, config, shared types
-│   ├── files/                 # Native parsers, OCR, vision pipeline
-│   ├── launcher.py            # MORROW command + PM2 process controls
-│   ├── llm/                   # Provider client, policy, usage metering
-│   ├── memory/                # Hybrid retrieval, vector index, Markdown vault, judge
-│   ├── persona/               # Generational/cultural persona profiles
-│   ├── routing/               # Addressing, intent, role routing, social fast path
-│   ├── safety/                # Conflict detector + loop guard
-│   ├── skills/                # SKILL.md loader, registry, router
-│   ├── storage/               # SQLite schema/driver + attachments
-│   ├── tasks/                 # Task lifecycle + handoff
-│   └── tools/                 # Registry, schemas, builtins, server tools, policy/executor
-├── tests/                     # Unit, integration, regression, hardening
-├── Morrow_PRD_v0.2_Skill_Based.md
+│   ├── adapters/               # Telegram / channel adapters
+│   ├── agents/                 # Role runtimes
+│   ├── approval/               # Approval + recovery boundary
+│   ├── browser/                # Provider-neutral browser layer
+│   ├── core/                   # Orchestrator, config, shared types
+│   ├── files/                  # Native parsing, OCR, vision
+│   ├── integrations/           # OpenViking + Immich feature-flagged adapters
+│   ├── llm/                    # OpenRouter client, model policy, usage budget
+│   ├── memory/                 # Hybrid memory, user scope, vector/mirror
+│   ├── persona/                # Versioned behavioral persona contracts
+│   ├── routing/                # Addressing, intent, role routing, social fast path
+│   ├── safety/                 # Conflict detector + loop guard
+│   ├── skills/                 # Skill registry/router
+│   ├── storage/                # SQLite schema/driver + attachment storage
+│   ├── tasks/                  # Task lifecycle, dependencies, per-agent runs
+│   └── tools/                  # Registry, discovery, schema validation, executor
+├── tests/                      # Unit, integration, audit/regression coverage
 ├── pyproject.toml
 └── requirements.txt
 ```
+
+---
+
+## 🧭 Dokumentasi Penting
+
+- [`AGENTS.md`](AGENTS.md) — invariants dan migration boundary terbaru untuk coding agents.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — arsitektur implementasi.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — ADR dan keputusan desain.
+- [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) — riwayat release v0.2.x.
+- [`docs/AUDIT_2026-08-19.md`](docs/AUDIT_2026-08-19.md) — audit baseline yang memicu hardening terbaru.
+- [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) — cara menjalankan validation/acceptance checks.
+
+---
+
+## 🚧 Batasan yang Sengaja Tidak Disamarkan
+
+- Runtime durable saat ini masih **3 role**. Maintenance belum menjadi agent aktif di source.
+- OpenViking dan Immich sudah memiliki adapter boundary, tetapi default **OFF** dan belum menggantikan local v0.2.6 path.
+- v0.3 orchestrator migration masih feature-flagged; tidak ada flag-day rewrite.
+- Temporal belum menjadi dependency/runtime requirement.
+- External side effects tetap membutuhkan approval, meskipun connector/tool secara teknis tersedia.
+- Passing unit tests tidak otomatis berarti live Telegram/browser/provider acceptance sudah terbukti di semua environment.
 
 ---
 
