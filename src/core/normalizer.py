@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import uuid
 
 from src.core.config import settings
 from src.core.types import NormalizedMessage
@@ -29,21 +30,21 @@ class MessageNormalizer:
         return f"{platform}:{group_id}:{event_id}"
 
     @classmethod
-    async def claim_event(
+    async def claim_event_owned(
         cls,
         event_id: str,
         platform: str = "telegram",
         group_id: str | None = None,
-    ) -> bool:
-        """Atomically claim an event for processing.
+    ) -> str | None:
+        """Atomically claim an event and return the durable lease owner token.
 
-        Completed events stay deduplicated. Failed events and abandoned processing leases may
-        be reclaimed, avoiding the old at-most-once behavior where a crash after claim could
-        permanently discard a Telegram update.
+        A reclaimed attempt always receives a new token. Completion/failure should pass this token
+        back so a stale worker cannot mutate a newer owner's attempt after takeover.
         """
         canonical = cls.canonical_event_id(event_id, platform, group_id)
         now = time.time()
         lease_until = now + cls.EVENT_LEASE_SECONDS
+        owner_token = f"evt_{uuid.uuid4().hex}"
         async with db.transaction() as conn:
             cursor = await conn.execute(
                 """SELECT status, attempt_count, lease_until
@@ -55,28 +56,40 @@ class MessageNormalizer:
                 await conn.execute(
                     """INSERT INTO processed_events
                        (event_id, platform, group_id, status, attempt_count, lease_until,
-                        last_error, updated_at)
-                       VALUES (?, ?, ?, 'processing', 1, ?, NULL, CURRENT_TIMESTAMP)""",
-                    (canonical, platform, group_id, lease_until),
+                        owner_token, last_error, updated_at)
+                       VALUES (?, ?, ?, 'processing', 1, ?, ?, NULL, CURRENT_TIMESTAMP)""",
+                    (canonical, platform, group_id, lease_until, owner_token),
                 )
-                return True
+                return owner_token
 
             row = dict(raw)
             status = str(row.get("status") or "completed")
             if status == "completed":
-                return False
+                return None
             current_lease = float(row.get("lease_until") or 0.0)
             if status == "processing" and current_lease > now:
-                return False
+                return None
 
             updated = await conn.execute(
                 """UPDATE processed_events
                    SET status='processing', attempt_count=COALESCE(attempt_count, 0)+1,
-                       lease_until=?, last_error=NULL, updated_at=CURRENT_TIMESTAMP
-                   WHERE event_id=? AND status!='completed'""",
-                (lease_until, canonical),
+                       lease_until=?, owner_token=?, last_error=NULL,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE event_id=? AND status!='completed'
+                     AND (status!='processing' OR COALESCE(lease_until, 0)<=?)""",
+                (lease_until, owner_token, canonical, now),
             )
-            return updated.rowcount == 1
+            return owner_token if updated.rowcount == 1 else None
+
+    @classmethod
+    async def claim_event(
+        cls,
+        event_id: str,
+        platform: str = "telegram",
+        group_id: str | None = None,
+    ) -> bool:
+        """Compatibility wrapper returning only whether the claim succeeded."""
+        return await cls.claim_event_owned(event_id, platform, group_id) is not None
 
     @classmethod
     async def mark_event_completed(
@@ -84,15 +97,26 @@ class MessageNormalizer:
         event_id: str,
         platform: str = "telegram",
         group_id: str | None = None,
-    ) -> None:
+        owner_token: str | None = None,
+    ) -> bool:
         canonical = cls.canonical_event_id(event_id, platform, group_id)
-        await db.execute(
-            """UPDATE processed_events
-               SET status='completed', lease_until=NULL, last_error=NULL,
-                   updated_at=CURRENT_TIMESTAMP
-               WHERE event_id=?""",
-            (canonical,),
-        )
+        if owner_token is None:
+            cursor = await db.execute(
+                """UPDATE processed_events
+                   SET status='completed', lease_until=NULL, owner_token=NULL, last_error=NULL,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE event_id=? AND status='processing'""",
+                (canonical,),
+            )
+        else:
+            cursor = await db.execute(
+                """UPDATE processed_events
+                   SET status='completed', lease_until=NULL, owner_token=NULL, last_error=NULL,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE event_id=? AND status='processing' AND owner_token=?""",
+                (canonical, owner_token),
+            )
+        return cursor.rowcount == 1
 
     @classmethod
     async def mark_event_failed(
@@ -101,16 +125,27 @@ class MessageNormalizer:
         platform: str = "telegram",
         group_id: str | None = None,
         error: str | None = None,
-    ) -> None:
+        owner_token: str | None = None,
+    ) -> bool:
         canonical = cls.canonical_event_id(event_id, platform, group_id)
         safe_error = (error or "processing_failed")[:1000]
-        await db.execute(
-            """UPDATE processed_events
-               SET status='failed', lease_until=NULL, last_error=?,
-                   updated_at=CURRENT_TIMESTAMP
-               WHERE event_id=? AND status='processing'""",
-            (safe_error, canonical),
-        )
+        if owner_token is None:
+            cursor = await db.execute(
+                """UPDATE processed_events
+                   SET status='failed', lease_until=NULL, owner_token=NULL, last_error=?,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE event_id=? AND status='processing'""",
+                (safe_error, canonical),
+            )
+        else:
+            cursor = await db.execute(
+                """UPDATE processed_events
+                   SET status='failed', lease_until=NULL, owner_token=NULL, last_error=?,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE event_id=? AND status='processing' AND owner_token=?""",
+                (safe_error, canonical, owner_token),
+            )
+        return cursor.rowcount == 1
 
     @classmethod
     async def wait_for_event_retry(
