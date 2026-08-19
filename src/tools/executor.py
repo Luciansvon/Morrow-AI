@@ -8,6 +8,7 @@ from src.storage.sqlite import db
 from src.tools.policy import tool_policy
 from src.tools.provenance import provenance_for_tool
 from src.tools.registry import tool_registry
+from src.tools.schema_validation import ToolParametersValidationError, validate_tool_parameters
 
 
 class UnknownExternalResultError(RuntimeError):
@@ -63,6 +64,20 @@ class IdempotentToolExecutor:
         if classification == "unknown":
             await self._journal(execution_id=execution_id, idempotency_key=idempotency_key, tool_name=tool_name, parameters=parameters, classification=classification, capability=capability, policy_decision="deny_unclassified", status="denied", side_effect=side_effect, retry_safe=False, execution_context=execution_context, approval_id=approval_id, error="TOOL_POLICY_UNCLASSIFIED", finished=True)
             return {"success": False, "error": "TOOL_POLICY_UNCLASSIFIED", "tool": tool_name, "execution_id": execution_id}
+
+        if registered is not None:
+            try:
+                validate_tool_parameters(parameters, registered.parameters)
+            except ToolParametersValidationError as exc:
+                error = f"TOOL_PARAMETERS_INVALID: {exc}"
+                await self._journal(execution_id=execution_id, idempotency_key=idempotency_key, tool_name=tool_name, parameters=parameters, classification=classification, capability=capability, policy_decision="deny_invalid_parameters", status="denied", side_effect=side_effect, retry_safe=False, execution_context=execution_context, approval_id=approval_id, error=error, finished=True)
+                return {
+                    "success": False,
+                    "error": "TOOL_PARAMETERS_INVALID",
+                    "detail": str(exc),
+                    "tool": tool_name,
+                    "execution_id": execution_id,
+                }
 
         external = classification == "external"
         if external and not is_approved:
