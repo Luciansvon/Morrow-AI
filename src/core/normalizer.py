@@ -3,6 +3,7 @@
 import asyncio
 import time
 import uuid
+from contextvars import ContextVar
 
 from src.core.config import settings
 from src.core.types import NormalizedMessage
@@ -12,6 +13,10 @@ from src.storage.sqlite import db
 class MessageNormalizer:
     EVENT_LEASE_SECONDS = 1800.0
     EVENT_WAIT_POLL_SECONDS = 0.25
+    _claim_context: ContextVar[tuple[str, str] | None] = ContextVar(
+        "morrow_event_claim_context",
+        default=None,
+    )
 
     @staticmethod
     def check_access(message: NormalizedMessage) -> tuple[bool, str | None]:
@@ -30,6 +35,13 @@ class MessageNormalizer:
         return f"{platform}:{group_id}:{event_id}"
 
     @classmethod
+    def _context_owner_token(cls, canonical: str) -> str | None:
+        claim = cls._claim_context.get()
+        if claim and claim[0] == canonical:
+            return claim[1]
+        return None
+
+    @classmethod
     async def claim_event_owned(
         cls,
         event_id: str,
@@ -38,8 +50,8 @@ class MessageNormalizer:
     ) -> str | None:
         """Atomically claim an event and return the durable lease owner token.
 
-        A reclaimed attempt always receives a new token. Completion/failure should pass this token
-        back so a stale worker cannot mutate a newer owner's attempt after takeover.
+        A reclaimed attempt always receives a new token. The token is retained in this async
+        context so existing callers of `mark_event_*` automatically close only their own lease.
         """
         canonical = cls.canonical_event_id(event_id, platform, group_id)
         now = time.time()
@@ -60,6 +72,7 @@ class MessageNormalizer:
                        VALUES (?, ?, ?, 'processing', 1, ?, ?, NULL, CURRENT_TIMESTAMP)""",
                     (canonical, platform, group_id, lease_until, owner_token),
                 )
+                cls._claim_context.set((canonical, owner_token))
                 return owner_token
 
             row = dict(raw)
@@ -79,7 +92,10 @@ class MessageNormalizer:
                      AND (status!='processing' OR COALESCE(lease_until, 0)<=?)""",
                 (lease_until, owner_token, canonical, now),
             )
-            return owner_token if updated.rowcount == 1 else None
+            if updated.rowcount == 1:
+                cls._claim_context.set((canonical, owner_token))
+                return owner_token
+            return None
 
     @classmethod
     async def claim_event(
@@ -100,22 +116,16 @@ class MessageNormalizer:
         owner_token: str | None = None,
     ) -> bool:
         canonical = cls.canonical_event_id(event_id, platform, group_id)
-        if owner_token is None:
-            cursor = await db.execute(
-                """UPDATE processed_events
-                   SET status='completed', lease_until=NULL, owner_token=NULL, last_error=NULL,
-                       updated_at=CURRENT_TIMESTAMP
-                   WHERE event_id=? AND status='processing'""",
-                (canonical,),
-            )
-        else:
-            cursor = await db.execute(
-                """UPDATE processed_events
-                   SET status='completed', lease_until=NULL, owner_token=NULL, last_error=NULL,
-                       updated_at=CURRENT_TIMESTAMP
-                   WHERE event_id=? AND status='processing' AND owner_token=?""",
-                (canonical, owner_token),
-            )
+        effective_owner = owner_token or cls._context_owner_token(canonical)
+        if effective_owner is None:
+            return False
+        cursor = await db.execute(
+            """UPDATE processed_events
+               SET status='completed', lease_until=NULL, owner_token=NULL, last_error=NULL,
+                   updated_at=CURRENT_TIMESTAMP
+               WHERE event_id=? AND status='processing' AND owner_token=?""",
+            (canonical, effective_owner),
+        )
         return cursor.rowcount == 1
 
     @classmethod
@@ -129,22 +139,16 @@ class MessageNormalizer:
     ) -> bool:
         canonical = cls.canonical_event_id(event_id, platform, group_id)
         safe_error = (error or "processing_failed")[:1000]
-        if owner_token is None:
-            cursor = await db.execute(
-                """UPDATE processed_events
-                   SET status='failed', lease_until=NULL, owner_token=NULL, last_error=?,
-                       updated_at=CURRENT_TIMESTAMP
-                   WHERE event_id=? AND status='processing'""",
-                (safe_error, canonical),
-            )
-        else:
-            cursor = await db.execute(
-                """UPDATE processed_events
-                   SET status='failed', lease_until=NULL, owner_token=NULL, last_error=?,
-                       updated_at=CURRENT_TIMESTAMP
-                   WHERE event_id=? AND status='processing' AND owner_token=?""",
-                (safe_error, canonical, owner_token),
-            )
+        effective_owner = owner_token or cls._context_owner_token(canonical)
+        if effective_owner is None:
+            return False
+        cursor = await db.execute(
+            """UPDATE processed_events
+               SET status='failed', lease_until=NULL, owner_token=NULL, last_error=?,
+                   updated_at=CURRENT_TIMESTAMP
+               WHERE event_id=? AND status='processing' AND owner_token=?""",
+            (safe_error, canonical, effective_owner),
+        )
         return cursor.rowcount == 1
 
     @classmethod
