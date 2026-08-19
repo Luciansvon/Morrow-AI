@@ -12,6 +12,7 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
         TaskStatus.IN_PROGRESS,
         TaskStatus.BLOCKED,
         TaskStatus.WAITING_USER,
+        TaskStatus.DONE,
         TaskStatus.FAILED,
         TaskStatus.CANCELLED,
     },
