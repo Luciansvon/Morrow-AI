@@ -2,6 +2,7 @@
 
 import uuid
 
+from src.core.control_context import get_control_target
 from src.core.types import RoleID, TaskModel, TaskStatus
 from src.storage.sqlite import db
 
@@ -173,14 +174,35 @@ class TaskService:
             return True
 
     @staticmethod
+    async def _active_task_ids(
+        conn,
+        group_id: str,
+        statuses: tuple[str, ...],
+        action: str,
+    ) -> list[str]:
+        target = get_control_target(action)
+        placeholders = ",".join("?" for _ in statuses)
+        params: tuple = (group_id, *statuses)
+        target_clause = ""
+        if target and target.task_id:
+            target_clause = " AND id=?"
+            params = (*params, target.task_id)
+        cursor = await conn.execute(
+            f"""SELECT id FROM tasks
+                WHERE group_id=? AND status IN ({placeholders}){target_clause}""",
+            params,
+        )
+        return [str(row["id"]) for row in await cursor.fetchall()]
+
+    @staticmethod
     async def cancel_active_tasks(group_id: str) -> int:
         async with db.transaction() as conn:
-            cursor = await conn.execute(
-                """SELECT id FROM tasks
-                   WHERE group_id=? AND status IN ('todo','in_progress','blocked','waiting_user')""",
-                (group_id,),
+            task_ids = await TaskService._active_task_ids(
+                conn,
+                group_id,
+                ("todo", "in_progress", "blocked", "waiting_user"),
+                "cancel",
             )
-            task_ids = [str(row["id"]) for row in await cursor.fetchall()]
             if not task_ids:
                 return 0
             placeholders = ",".join("?" for _ in task_ids)
@@ -200,12 +222,12 @@ class TaskService:
     @staticmethod
     async def pause_active_tasks(group_id: str) -> int:
         async with db.transaction() as conn:
-            cursor = await conn.execute(
-                """SELECT id FROM tasks
-                   WHERE group_id=? AND status IN ('todo','in_progress','blocked')""",
-                (group_id,),
+            task_ids = await TaskService._active_task_ids(
+                conn,
+                group_id,
+                ("todo", "in_progress", "blocked"),
+                "pause",
             )
-            task_ids = [str(row["id"]) for row in await cursor.fetchall()]
             if not task_ids:
                 return 0
             placeholders = ",".join("?" for _ in task_ids)
@@ -224,10 +246,16 @@ class TaskService:
 
     @staticmethod
     async def resume_waiting_tasks(group_id: str) -> int:
+        target = get_control_target("resume")
+        params: tuple = (group_id,)
+        target_clause = ""
+        if target and target.task_id:
+            target_clause = " AND id=?"
+            params = (group_id, target.task_id)
         cursor = await db.execute(
-            """UPDATE tasks SET status='todo', updated_at=CURRENT_TIMESTAMP
-               WHERE group_id=? AND status='waiting_user'""",
-            (group_id,),
+            f"""UPDATE tasks SET status='todo', updated_at=CURRENT_TIMESTAMP
+                WHERE group_id=? AND status='waiting_user'{target_clause}""",
+            params,
         )
         return max(0, cursor.rowcount)
 
