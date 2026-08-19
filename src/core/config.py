@@ -75,6 +75,23 @@ class Settings(BaseSettings):
     browser_timeout_seconds: float = Field(default=45.0, gt=0, alias="BROWSER_TIMEOUT_SECONDS")
     browser_headed: bool = Field(default=False, alias="BROWSER_HEADED")
 
+    # v0.3 integrations are additive. OFF must preserve the existing v0.2.6 runtime path.
+    morrow_v03_orchestrator_enabled: bool = Field(default=False, alias="MORROW_V03_ORCHESTRATOR_ENABLED")
+
+    openviking_enabled: bool = Field(default=False, alias="OPENVIKING_ENABLED")
+    openviking_base_url: str = Field(default="http://127.0.0.1:1933", alias="OPENVIKING_BASE_URL")
+    openviking_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENVIKING_API_KEY")
+    openviking_account: str = Field(default="", alias="OPENVIKING_ACCOUNT")
+    openviking_user: str = Field(default="", alias="OPENVIKING_USER")
+    openviking_agent_id: str = Field(default="morrow", alias="OPENVIKING_AGENT_ID")
+    openviking_timeout_seconds: float = Field(default=30.0, gt=0, alias="OPENVIKING_TIMEOUT_SECONDS")
+
+    immich_enabled: bool = Field(default=False, alias="IMMICH_ENABLED")
+    immich_base_url: str = Field(default="http://127.0.0.1:2283", alias="IMMICH_BASE_URL")
+    immich_api_key: SecretStr = Field(default=SecretStr(""), alias="IMMICH_API_KEY")
+    immich_timeout_seconds: float = Field(default=30.0, gt=0, alias="IMMICH_TIMEOUT_SECONDS")
+    immich_default_search_size: int = Field(default=20, gt=0, le=1000, alias="IMMICH_DEFAULT_SEARCH_SIZE")
+
     budget_routing_per_message: float = Field(default=0.002, ge=0, alias="BUDGET_ROUTING_PER_MESSAGE")
     budget_normal_task: float = Field(default=0.05, ge=0, alias="BUDGET_NORMAL_TASK")
     budget_thread_total: float = Field(default=0.50, gt=0, alias="BUDGET_THREAD_TOTAL")
@@ -135,6 +152,22 @@ class Settings(BaseSettings):
             raise ValueError("TELEGRAM_ALLOWED_GROUP_IDS wajib diisi saat adapter Telegram aktif.")
         if not self.whitelisted_users:
             raise ValueError("TELEGRAM_WHITELIST_USER_IDS wajib diisi saat adapter Telegram aktif.")
+
+    def validate_openviking(self) -> None:
+        if not self.openviking_enabled:
+            return
+        if not self.openviking_base_url.strip():
+            raise ValueError("OPENVIKING_BASE_URL wajib diisi ketika OPENVIKING_ENABLED=true.")
+        if not self.openviking_api_key.get_secret_value().strip():
+            raise ValueError("OPENVIKING_API_KEY wajib diisi ketika OPENVIKING_ENABLED=true.")
+
+    def validate_immich(self) -> None:
+        if not self.immich_enabled:
+            return
+        if not self.immich_base_url.strip():
+            raise ValueError("IMMICH_BASE_URL wajib diisi ketika IMMICH_ENABLED=true.")
+        if not self.immich_api_key.get_secret_value().strip():
+            raise ValueError("IMMICH_API_KEY wajib diisi ketika IMMICH_ENABLED=true.")
 
     def is_user_whitelisted(self, user_id: str) -> bool:
         return str(user_id) in self.whitelisted_users
