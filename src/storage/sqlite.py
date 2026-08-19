@@ -103,12 +103,17 @@ class DatabaseManager:
         migrations = {
             "memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")],
             "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")],
-            "approvals": [("execution_error", "TEXT")],
+            "approvals": [
+                ("execution_error", "TEXT"),
+                ("execution_owner_token", "TEXT"),
+                ("execution_lease_until", "REAL"),
+            ],
             "processed_events": [
                 ("group_id", "TEXT"),
                 ("status", "TEXT NOT NULL DEFAULT 'completed'"),
                 ("attempt_count", "INTEGER NOT NULL DEFAULT 1"),
                 ("lease_until", "REAL"),
+                ("owner_token", "TEXT"),
                 ("last_error", "TEXT"),
                 ("updated_at", "TIMESTAMP"),
             ],
