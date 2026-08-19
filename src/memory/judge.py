@@ -16,6 +16,7 @@ Sumber kebenaran untuk evaluasi ini HANYA PESAN PENGGUNA yang diberikan. Jangan 
 Simpan hanya informasi durable yang benar-benar dinyatakan/ditetapkan pengguna: fakta proyek, keputusan final, constraint, deadline, atau status penting.
 JANGAN simpan sapaan, brainstorming sementara, pertanyaan, skenario hipotetis, opini/saran agent, asumsi, hasil riset agent, statistik eksternal, atau fakta yang tidak dinyatakan pengguna sebagai keadaan/keputusan yang durable.
 Jika sebuah kandidat tidak dapat ditunjukkan kembali ke kata-kata pengguna, jangan simpan.
+Scope `shared` pada output berarti memori milik pengguna yang boleh dipakai lintas role untuk pengguna itu; runtime akan menyimpannya sebagai user-private. Scope `role` hanya untuk konteks role aktif.
 Output JSON ketat:
 {"should_store": true|false, "items": [{"scope":"shared"|"role","key":"...","value":"...","memory_type":"decision"|"fact"|"constraint"|"status","reason":"..."}]}
 """
@@ -83,27 +84,23 @@ class MemoryJudge:
 
     @classmethod
     def parse_explicit_directive(cls, text: str) -> dict[str, Any] | None:
-        """Parse explicit user memory command anchored near the message beginning."""
         stripped = text.strip()
         if not stripped:
             return None
         core = cls._PREFIX_RE.sub("", stripped).strip()
         if not core:
             return None
-
         for pattern, fixed_type in cls._EXPLICIT_COMMANDS:
             match = pattern.match(core)
             if not match:
                 continue
             if fixed_type is not None:
-                raw_type = "fakta"
                 raw_value = match.group(1).strip()
                 memory_type = fixed_type
             else:
                 raw_type = match.group(1).strip()
                 raw_value = match.group(2).strip()
                 memory_type = cls._TYPE_MAP.get(raw_type.lower(), MemoryType.FACT)
-
             if not raw_value:
                 return None
             tokens = re.findall(r"[a-z0-9]+", raw_value.lower())[:8]
@@ -123,12 +120,10 @@ class MemoryJudge:
 
     @classmethod
     def _candidate_supported_by_user(cls, value: str, user_text: str) -> bool:
-        """Fail closed when the judge invents details not present in the user's message."""
         candidate_numbers = set(_NUMBER_RE.findall(value.lower()))
         user_numbers = set(_NUMBER_RE.findall(user_text.lower()))
         if candidate_numbers - user_numbers:
             return False
-
         candidate_tokens = cls._support_tokens(value)
         user_tokens = cls._support_tokens(user_text)
         if not candidate_tokens:
@@ -146,12 +141,12 @@ class MemoryJudge:
         role_id: RoleID | None,
         group_id: str,
     ) -> dict[str, Any] | None:
-        """Persist an explicit user memory command and return only after durable write succeeds."""
         parsed = cls.parse_explicit_directive(text)
         if not parsed:
             return None
         item = await memory_service.set_memory(
-            scope=MemoryScope.SHARED,
+            scope=MemoryScope.USER,
+            user_id=actor_id,
             key=parsed["key"],
             value=parsed["value"],
             changed_by_actor=actor_id,
@@ -216,7 +211,7 @@ class MemoryJudge:
                 value = str(item["value"])[:4000]
                 if not MemoryJudge._candidate_supported_by_user(value, bounded_user):
                     continue
-                scope = MemoryScope.SHARED if item.get("scope") == "shared" else MemoryScope.ROLE
+                scope = MemoryScope.ROLE if item.get("scope") == "role" else MemoryScope.USER
                 if scope == MemoryScope.ROLE and role_id is None:
                     continue
                 try:
@@ -229,6 +224,7 @@ class MemoryJudge:
                     value=value,
                     changed_by_actor=actor_id,
                     role_id=role_id if scope == MemoryScope.ROLE else None,
+                    user_id=actor_id if scope == MemoryScope.USER else None,
                     changed_by_role=role_id,
                     reason=item.get("reason", "Memory Judge"),
                     memory_type=mem_type,
