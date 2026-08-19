@@ -26,6 +26,7 @@ class TaskStatus(str, Enum):
 
 
 class MemoryScope(str, Enum):
+    USER = "user"
     ROLE = "role"
     SHARED = "shared"
 
@@ -160,6 +161,7 @@ class MemoryItem(BaseModel):
     id: str
     scope: MemoryScope
     role_id: RoleID | None = None
+    user_id: str | None = None
     group_id: str = "__global__"
     key: str
     value: str
