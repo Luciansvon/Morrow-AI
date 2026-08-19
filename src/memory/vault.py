@@ -15,10 +15,17 @@ _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 class MarkdownMemoryVault:
     @staticmethod
     def _safe_component(value: str) -> str:
-        cleaned = _SAFE_COMPONENT_RE.sub("_", value.strip()).strip("._")[:80]
-        if cleaned:
+        raw = value.strip()
+        cleaned = _SAFE_COMPONENT_RE.sub("_", raw).strip("._")[:80]
+        # Preserve existing paths for already-safe, short identifiers. If sanitization or
+        # truncation changed the identifier, append a stable digest so `team/a` cannot collide
+        # with the genuinely distinct safe ID `team_a`.
+        if cleaned and cleaned == raw and len(raw) <= 80:
             return cleaned
-        return "group_" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+        if cleaned:
+            return f"{cleaned[:64]}--{digest}"
+        return "group_" + digest
 
     @classmethod
     def _target_path(
