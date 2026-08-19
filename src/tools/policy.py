@@ -22,6 +22,10 @@ INTERNAL_ACTIONS: set[str] = {
     "browser_check",
     "browser_uncheck",
     "browser_scroll",
+    "openviking_find",
+    "openviking_read",
+    "immich_search_assets",
+    "immich_get_asset",
 }
 
 EXTERNAL_ACTIONS: set[str] = {
@@ -35,6 +39,7 @@ EXTERNAL_ACTIONS: set[str] = {
     "browser_commit_action",
     "browser_click",
     "browser_press",
+    "openviking_add_resource",
 }
 
 
