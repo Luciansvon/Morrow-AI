@@ -6,6 +6,7 @@ import uuid
 from contextvars import ContextVar
 
 from src.core.config import settings
+from src.core.request_context import set_request_identity
 from src.core.types import NormalizedMessage
 from src.storage.sqlite import db
 
@@ -21,11 +22,13 @@ class MessageNormalizer:
     @staticmethod
     def check_access(message: NormalizedMessage) -> tuple[bool, str | None]:
         if message.platform == "cli" and settings.morrow_env.lower() != "production":
+            set_request_identity(message.sender_id, message.group_id, message.platform)
             return True, None
         if not settings.is_user_whitelisted(message.sender_id):
             return False, f"User ID '{message.sender_id}' tidak terdaftar dalam whitelist."
         if not settings.is_group_allowlisted(message.group_id):
             return False, f"Group ID '{message.group_id}' tidak terdaftar dalam group allowlist."
+        set_request_identity(message.sender_id, message.group_id, message.platform)
         return True, None
 
     @staticmethod
