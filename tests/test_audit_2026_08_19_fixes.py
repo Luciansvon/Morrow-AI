@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
+import json
+import time
+from datetime import timedelta
+
 import httpx
 import pytest
 
+from src.approval.gateway import approval_gateway
 from src.core.config import settings
-from src.core.types import RoleID, TaskStatus
+from src.core.normalizer import MessageNormalizer
+from src.core.types import (
+    AddressingType,
+    ApprovalStatus,
+    MemoryScope,
+    NormalizedMessage,
+    RoleID,
+    TaskStatus,
+    utc_now,
+)
 from src.integrations.immich import ImmichClient, ImmichDisabledError
 from src.integrations.openviking import OpenVikingClient, OpenVikingDisabledError
+from src.memory.service import memory_service
+from src.memory.vault import MarkdownMemoryVault
+from src.routing.addressing import addressing_detector
+from src.skills.registry import skill_registry
 from src.storage.sqlite import db
 from src.tasks.service import task_service
 from src.tools.executor import tool_executor
@@ -128,6 +146,143 @@ async def test_pause_cancels_running_agent_ledger_and_stale_completion_is_reject
     assert runs[0]["status"] == "cancelled"
     assert await task_service.complete_agent_run(task.id, RoleID.MANAGER, "stale") is False
     assert (await task_service.get_task(task.id)).status == TaskStatus.WAITING_USER
+
+
+@pytest.mark.asyncio
+async def test_event_takeover_fences_stale_owner_completion(monkeypatch):
+    monkeypatch.setattr(MessageNormalizer, "EVENT_LEASE_SECONDS", 0.01)
+    first = await MessageNormalizer.claim_event_owned("evt-race", "telegram", "g1")
+    assert first is not None
+    await db.execute(
+        "UPDATE processed_events SET lease_until=? WHERE event_id=?",
+        (time.time() - 1, "telegram:g1:evt-race"),
+    )
+    second = await MessageNormalizer.claim_event_owned("evt-race", "telegram", "g1")
+    assert second is not None and second != first
+
+    assert await MessageNormalizer.mark_event_completed(
+        "evt-race", "telegram", "g1", owner_token=first
+    ) is False
+    row = await db.fetch_one(
+        "SELECT status, owner_token, attempt_count FROM processed_events WHERE event_id=?",
+        ("telegram:g1:evt-race",),
+    )
+    assert row == {"status": "processing", "owner_token": second, "attempt_count": 2}
+    assert await MessageNormalizer.mark_event_completed(
+        "evt-race", "telegram", "g1", owner_token=second
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_expired_approval_with_running_journal_becomes_unknown_without_retry():
+    approval_id = "appr_crash_recovery"
+    idempotency_key = "idem_crash_recovery"
+    execution_id = "approval_exec_crash"
+    expires_at = (utc_now() + timedelta(minutes=10)).isoformat()
+    await db.execute(
+        """INSERT INTO approvals
+           (approval_id, group_id, action_type, normalized_parameters, parameter_hash,
+            requested_by_role, idempotency_key, status, expires_at, execution_id,
+            execution_owner_token, execution_lease_until)
+           VALUES (?, 'g1', 'send_email', '{}', 'hash', 'manager', ?, ?, ?, ?, 'old-owner', ?)""",
+        (
+            approval_id,
+            idempotency_key,
+            ApprovalStatus.EXECUTING.value,
+            expires_at,
+            execution_id,
+            time.time() - 60,
+        ),
+    )
+    await db.execute(
+        """INSERT INTO tool_executions
+           (execution_id, idempotency_key, tool_name, parameters_json, classification,
+            capability, policy_decision, status, side_effect, retry_safe)
+           VALUES ('tool_exec_crash', ?, 'send_email', '{}', 'external', 'commit',
+                   'allow', 'running', 1, 0)""",
+        (idempotency_key,),
+    )
+
+    result = await approval_gateway.execute_approved_request(approval_id)
+    assert result["success"] is False
+    assert result["status"] == "unknown"
+    assert result["retry_allowed"] is False
+    row = await db.fetch_one(
+        "SELECT status, execution_owner_token, execution_lease_until FROM approvals WHERE approval_id=?",
+        (approval_id,),
+    )
+    assert row["status"] == ApprovalStatus.UNKNOWN.value
+    assert row["execution_owner_token"] is None
+    assert row["execution_lease_until"] is None
+
+
+@pytest.mark.asyncio
+async def test_literal_at_semua_routes_collective_while_object_quantifier_does_not():
+    collective = await addressing_detector.detect(
+        NormalizedMessage(
+            message_id="m1",
+            group_id="g1",
+            sender_id="u1",
+            text="@semua analisis toko Etsy minggu ini",
+        )
+    )
+    object_quantifier = await addressing_detector.detect(
+        NormalizedMessage(
+            message_id="m2",
+            group_id="g1",
+            sender_id="u1",
+            text="cek semua produk",
+        )
+    )
+    assert collective.addressing_type == AddressingType.ALL_AGENTS
+    assert collective.target_agents == [RoleID.MANAGER, RoleID.MARKETING, RoleID.ADVISOR]
+    assert object_quantifier.addressing_type == AddressingType.NONE
+
+
+def test_memory_vault_sanitization_does_not_collide_distinct_group_ids():
+    assert MarkdownMemoryVault._safe_component("team/a") != MarkdownMemoryVault._safe_component("team_a")
+
+
+@pytest.mark.asyncio
+async def test_user_memory_is_not_retrieved_by_other_user_in_same_group():
+    await memory_service.set_memory(
+        scope=MemoryScope.USER,
+        user_id="user-a",
+        key="project_phoenix",
+        value="Project Phoenix uses walnut veneer",
+        changed_by_actor="user-a",
+        group_id="g1",
+    )
+    await memory_service.set_memory(
+        scope=MemoryScope.USER,
+        user_id="user-b",
+        key="project_nebula",
+        value="Project Nebula uses ash wood",
+        changed_by_actor="user-b",
+        group_id="g1",
+    )
+
+    own = await memory_service.retrieve_relevant_memory(
+        "phoenix walnut",
+        RoleID.MANAGER,
+        "g1",
+        user_id="user-a",
+    )
+    other = await memory_service.retrieve_relevant_memory(
+        "phoenix walnut",
+        RoleID.MANAGER,
+        "g1",
+        user_id="user-b",
+    )
+    assert any(row["key"] == "project_phoenix" for row in own)
+    assert all(row["key"] != "project_phoenix" for row in other)
+
+
+def test_fallback_skills_do_not_advertise_unregistered_backend_tools():
+    for name in ("task_coordination", "campaign_strategy", "risk_decision_analysis"):
+        skill = skill_registry.get_skill(name)
+        assert skill is not None
+        assert skill.tools == []
 
 
 def test_integration_flags_default_to_off():
