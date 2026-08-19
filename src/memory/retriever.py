@@ -44,6 +44,7 @@ class HybridMemoryRetriever:
         query: str,
         group_id: str,
         role: RoleID,
+        user_id: str | None,
         limit: int,
     ) -> list[dict[str, Any]]:
         match_query = cls._fts_query(query)
@@ -51,14 +52,21 @@ class HybridMemoryRetriever:
             return []
         try:
             return await db.fetch_all(
-                """SELECT memory_id AS id, group_id, scope, role_id, key, value, memory_type,
+                """SELECT memory_fts.memory_id AS id, memory_fts.group_id,
+                          memory_fts.scope, memory_fts.role_id, m.user_id,
+                          memory_fts.key, memory_fts.value, memory_fts.memory_type,
                           bm25(memory_fts, 0.0, 0.0, 0.0, 0.0, 4.0, 1.0, 0.0) AS fts_rank
                    FROM memory_fts
-                   WHERE memory_fts MATCH ? AND group_id=?
-                     AND (scope='shared' OR (scope='role' AND role_id=?))
+                   JOIN memories m ON m.id=memory_fts.memory_id
+                   WHERE memory_fts MATCH ? AND memory_fts.group_id=?
+                     AND (
+                         memory_fts.scope='shared'
+                         OR (memory_fts.scope='role' AND memory_fts.role_id=?)
+                         OR (memory_fts.scope='user' AND m.user_id=?)
+                     )
                    ORDER BY fts_rank
                    LIMIT ?""",
-                (match_query, group_id, role.value, limit),
+                (match_query, group_id, role.value, user_id, limit),
             )
         except Exception:
             return []
@@ -69,6 +77,7 @@ class HybridMemoryRetriever:
         query: str,
         group_id: str,
         role: RoleID,
+        user_id: str | None,
         limit: int,
     ) -> list[dict[str, Any]]:
         """Prioritize decisions/constraints only when they overlap the current topic."""
@@ -76,15 +85,19 @@ class HybridMemoryRetriever:
         if not query_tokens:
             return []
         rows = await db.fetch_all(
-            """SELECT id, group_id, scope, role_id, key, value, memory_type,
+            """SELECT id, group_id, scope, role_id, user_id, key, value, memory_type,
                       updated_at, created_at
                FROM memories
                WHERE group_id=?
                  AND memory_type IN ('decision','constraint')
-                 AND (scope='shared' OR (scope='role' AND role_id=?))
+                 AND (
+                     scope='shared'
+                     OR (scope='role' AND role_id=?)
+                     OR (scope='user' AND user_id=?)
+                 )
                ORDER BY updated_at DESC, created_at DESC
                LIMIT 50""",
-            (group_id, role.value),
+            (group_id, role.value, user_id),
         )
         ranked: list[tuple[int, int, dict[str, Any]]] = []
         for recency, row in enumerate(rows):
@@ -101,18 +114,23 @@ class HybridMemoryRetriever:
         group_id: str,
         role: RoleID,
         limit: int | None = None,
+        *,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        # A vague standalone follow-up such as "gimana?" has no topic. Conversation
-        # continuity must resolve it before memory retrieval; otherwise injecting an
-        # arbitrary recent decision is more harmful than returning no memory at all.
         if not self._meaningful_tokens(query):
             return []
 
         top_k = settings.memory_hybrid_top_k if limit is None else max(1, limit)
         candidate_k = min(50, max(top_k * 2, 8))
-        pinned_task = self._pinned_truth(query, group_id, role, min(4, top_k))
-        fts_task = self._fts_search(query, group_id, role, candidate_k)
-        semantic_task = memory_vector_index.search(query, group_id, role, candidate_k)
+        pinned_task = self._pinned_truth(query, group_id, role, user_id, min(4, top_k))
+        fts_task = self._fts_search(query, group_id, role, user_id, candidate_k)
+        semantic_task = memory_vector_index.search(
+            query,
+            group_id,
+            role,
+            candidate_k,
+            user_id=user_id,
+        )
         pinned, fts_rows, semantic_rows = await asyncio.gather(
             pinned_task,
             fts_task,
