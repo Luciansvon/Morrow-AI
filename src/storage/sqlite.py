@@ -101,7 +101,11 @@ class DatabaseManager:
                 await conn.execute("DROP TABLE memories_legacy_v02")
         await self._migrate_tool_execution_journal(conn)
         migrations = {
-            "memory_audit": [("group_id", "TEXT NOT NULL DEFAULT '__global__'")],
+            "memories": [("user_id", "TEXT")],
+            "memory_audit": [
+                ("group_id", "TEXT NOT NULL DEFAULT '__global__'"),
+                ("user_id", "TEXT"),
+            ],
             "tasks": [("max_retries", "INTEGER NOT NULL DEFAULT 3")],
             "approvals": [
                 ("execution_error", "TEXT"),
@@ -134,7 +138,48 @@ class DatabaseManager:
                        updated_at=COALESCE(updated_at, processed_at)"""
             )
         if await self._table_exists("memories"):
-            await conn.execute("""DELETE FROM memories WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY group_id, scope, CASE WHEN scope='role' THEN COALESCE(role_id, '') ELSE '' END, key ORDER BY updated_at DESC, created_at DESC, rowid DESC) AS rn FROM memories) ranked WHERE rn > 1)""")
+            # Historical writes used `shared` for user-originated memory because no user boundary
+            # existed. When the audit trail identifies a non-system actor, migrate conservatively
+            # to private user scope. Rows with no trustworthy actor remain genuinely shared.
+            if await self._table_exists("memory_audit"):
+                await conn.execute(
+                    """UPDATE memories
+                       SET scope='user',
+                           user_id=(
+                               SELECT ma.changed_by_actor
+                               FROM memory_audit ma
+                               WHERE ma.memory_id=memories.id
+                                 AND ma.changed_by_actor NOT IN ('system', 'migration')
+                               ORDER BY ma.timestamp DESC, ma.rowid DESC
+                               LIMIT 1
+                           ),
+                           role_id=NULL
+                       WHERE scope='shared'
+                         AND EXISTS (
+                             SELECT 1 FROM memory_audit ma
+                             WHERE ma.memory_id=memories.id
+                               AND ma.changed_by_actor NOT IN ('system', 'migration')
+                         )"""
+                )
+            await conn.execute(
+                """DELETE FROM memories WHERE id IN (
+                       SELECT id FROM (
+                           SELECT id,
+                                  ROW_NUMBER() OVER (
+                                      PARTITION BY group_id, scope,
+                                          CASE
+                                              WHEN scope='role' THEN COALESCE(role_id, '')
+                                              WHEN scope='user' THEN COALESCE(user_id, '')
+                                              ELSE ''
+                                          END,
+                                          key
+                                      ORDER BY updated_at DESC, created_at DESC, rowid DESC
+                                  ) AS rn
+                           FROM memories
+                       ) ranked
+                       WHERE rn > 1
+                   )"""
+            )
         await conn.commit()
 
     async def _ensure_memory_vector_schema(self, conn: aiosqlite.Connection) -> None:
