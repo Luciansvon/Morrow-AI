@@ -168,3 +168,8 @@ def ensure_builtin_tools_registered() -> None:
         from src.browser.tools import ensure_browser_tools_registered
 
         ensure_browser_tools_registered()
+
+    if settings.openviking_enabled or settings.immich_enabled:
+        from src.integrations.tools import ensure_integration_tools_registered
+
+        ensure_integration_tools_registered()

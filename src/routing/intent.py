@@ -1,6 +1,7 @@
 import re
 from typing import ClassVar
 
+from src.core.control_context import set_control_target
 from src.core.types import MessageIntent
 
 
@@ -41,6 +42,7 @@ class IntentDetector:
     ]
 
     LAUGHTER_MARKERS: ClassVar[tuple[str, ...]] = ("wkwk", "kwkw", "haha", "hehe")
+    TASK_ID_RE: ClassVar[re.Pattern[str]] = re.compile(r"\b(task_[a-z0-9_-]+)\b", re.IGNORECASE)
 
     CONTROL_LEAD: ClassVar[str] = (
         r"^\s*(?:(?:manager|marketing|advisor)\s*[,;:]?\s*)?"
@@ -51,7 +53,7 @@ class IntentDetector:
         (
             "cancel",
             (
-                r"^\s*/(?:cancel|stop)(?:@\w+)?\s*$",
+                r"^\s*/(?:cancel|stop)(?:@\w+)?(?:\s+task_[a-z0-9_-]+)?\s*$",
                 CONTROL_LEAD + r"(?:stop|berhenti|hentikan)\b.*$",
                 CONTROL_LEAD + r"batalkan\s+(?:semua|seluruh)(?:\s+(?:task|tugas|otomatisasi))?\b.*$",
                 CONTROL_LEAD + r"batal(?:\s+aja)?\s+(?:semua|seluruh)(?:\s+(?:task|tugas|otomatisasi))?\b.*$",
@@ -63,14 +65,14 @@ class IntentDetector:
         (
             "pause",
             (
-                r"^\s*/pause(?:@\w+)?\s*$",
+                r"^\s*/pause(?:@\w+)?(?:\s+task_[a-z0-9_-]+)?\s*$",
                 CONTROL_LEAD + r"(?:jeda|pause|tunda\s+dulu)\b.*$",
             ),
         ),
         (
             "resume",
             (
-                r"^\s*/resume(?:@\w+)?\s*$",
+                r"^\s*/resume(?:@\w+)?(?:\s+task_[a-z0-9_-]+)?\s*$",
                 CONTROL_LEAD + r"(?:lanjutkan|resume)\s+(?:task|tugas|otomatisasi)\b.*$",
             ),
         ),
@@ -79,8 +81,11 @@ class IntentDetector:
     @classmethod
     def detect_control_command(cls, text: str) -> str | None:
         text_clean = (text or "").strip().lower()
+        set_control_target(None)
         for action, patterns in cls.CONTROL_PATTERNS:
             if any(re.search(pattern, text_clean) for pattern in patterns):
+                task_match = cls.TASK_ID_RE.search(text_clean)
+                set_control_target(action, task_match.group(1) if task_match else None)
                 return action
         return None
 

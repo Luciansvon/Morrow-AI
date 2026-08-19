@@ -3,6 +3,7 @@
 import uuid
 from typing import Any
 
+from src.core.request_context import current_user_id
 from src.core.types import MemoryItem, MemoryScope, MemoryType, RoleID
 from src.memory.retriever import hybrid_memory_retriever
 from src.memory.vault import memory_vault
@@ -18,23 +19,37 @@ class MemoryService:
         value: str,
         changed_by_actor: str,
         role_id: RoleID | None = None,
+        user_id: str | None = None,
         changed_by_role: RoleID | None = None,
         reason: str | None = None,
         memory_type: MemoryType = MemoryType.FACT,
         group_id: str = "__global__",
     ) -> MemoryItem:
-        if scope == MemoryScope.ROLE and role_id is None:
-            raise ValueError("role_id wajib untuk role memory")
-        if scope == MemoryScope.SHARED and role_id is not None:
-            raise ValueError("role_id tidak boleh diisi untuk shared memory")
+        if scope == MemoryScope.USER:
+            if not (user_id or "").strip():
+                raise ValueError("user_id wajib untuk user memory")
+            if role_id is not None:
+                raise ValueError("role_id tidak boleh diisi untuk user memory")
+        elif scope == MemoryScope.ROLE:
+            if role_id is None:
+                raise ValueError("role_id wajib untuk role memory")
+            if user_id is not None:
+                raise ValueError("user_id tidak boleh diisi untuk role memory")
+        elif scope == MemoryScope.SHARED:
+            if role_id is not None or user_id is not None:
+                raise ValueError("role_id/user_id tidak boleh diisi untuk shared memory")
+
         role_val = role_id.value if role_id else None
+        user_val = user_id.strip() if user_id else None
 
         async with db.transaction() as conn:
             cursor = await conn.execute(
                 """SELECT id, value FROM memories
-                   WHERE group_id = ? AND scope = ?
-                   AND (role_id = ? OR (role_id IS NULL AND ? IS NULL)) AND key = ?""",
-                (group_id, scope.value, role_val, role_val, key),
+                   WHERE group_id=? AND scope=?
+                     AND (role_id=? OR (role_id IS NULL AND ? IS NULL))
+                     AND (user_id=? OR (user_id IS NULL AND ? IS NULL))
+                     AND key=?""",
+                (group_id, scope.value, role_val, role_val, user_val, user_val, key),
             )
             raw = await cursor.fetchone()
             existing = dict(raw) if raw else None
@@ -51,21 +66,31 @@ class MemoryService:
             else:
                 await conn.execute(
                     """INSERT INTO memories
-                       (id, group_id, scope, role_id, key, value, memory_type)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (mem_id, group_id, scope.value, role_val, key, value, memory_type.value),
+                       (id, group_id, scope, role_id, user_id, key, value, memory_type)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        mem_id,
+                        group_id,
+                        scope.value,
+                        role_val,
+                        user_val,
+                        key,
+                        value,
+                        memory_type.value,
+                    ),
                 )
             await conn.execute(
                 """INSERT INTO memory_audit
-                   (id, memory_id, group_id, scope, role_id, key, old_value, new_value,
+                   (id, memory_id, group_id, scope, role_id, user_id, key, old_value, new_value,
                     changed_by_actor, changed_by_role, reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     f"aud_{uuid.uuid4().hex[:10]}",
                     mem_id,
                     group_id,
                     scope.value,
                     role_val,
+                    user_val,
                     key,
                     old_value,
                     value,
@@ -80,6 +105,7 @@ class MemoryService:
             group_id=group_id,
             scope=scope,
             role_id=role_id,
+            user_id=user_val,
             key=key,
             value=value,
             memory_type=memory_type,
@@ -87,7 +113,7 @@ class MemoryService:
 
         # Derived indexes must never make the source-of-truth write fail.
         try:
-            await memory_vault.sync_scope(group_id, scope, role_id)
+            await memory_vault.sync_scope(group_id, scope, role_id, user_val)
         except Exception:
             pass
         try:
@@ -101,6 +127,15 @@ class MemoryService:
         rows = await db.fetch_all(
             "SELECT key, value FROM memories WHERE group_id=? AND scope='shared'",
             (group_id,),
+        )
+        return {row["key"]: row["value"] for row in rows}
+
+    @staticmethod
+    async def get_user_memory(user_id: str, group_id: str = "__global__") -> dict[str, str]:
+        rows = await db.fetch_all(
+            """SELECT key, value FROM memories
+               WHERE group_id=? AND scope='user' AND user_id=?""",
+            (group_id, user_id),
         )
         return {row["key"]: row["value"] for row in rows}
 
@@ -128,8 +163,16 @@ class MemoryService:
         role: RoleID,
         group_id: str = "__global__",
         limit: int | None = None,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        return await hybrid_memory_retriever.retrieve(query, group_id, role, limit)
+        effective_user_id = user_id or current_user_id()
+        return await hybrid_memory_retriever.retrieve(
+            query,
+            group_id,
+            role,
+            limit,
+            user_id=effective_user_id,
+        )
 
     @staticmethod
     async def initialize_long_term_memory() -> dict[str, int]:

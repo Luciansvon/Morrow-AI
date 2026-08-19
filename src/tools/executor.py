@@ -2,12 +2,13 @@
 
 import json
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from src.storage.sqlite import db
 from src.tools.policy import tool_policy
 from src.tools.provenance import provenance_for_tool
 from src.tools.registry import tool_registry
+from src.tools.schema_validation import ToolParametersValidationError, validate_tool_parameters
 
 
 class UnknownExternalResultError(RuntimeError):
@@ -15,6 +16,11 @@ class UnknownExternalResultError(RuntimeError):
 
 
 class IdempotentToolExecutor:
+    _INTERNAL_PARAMETER_KEYS: ClassVar[dict[str, set[str]]] = {
+        "browser": {"_task_space", "_state_hash"},
+        "meta": {"_role"},
+    }
+
     @staticmethod
     def _same_request(previous: dict[str, Any], tool_name: str, parameters: dict[str, Any]) -> bool:
         if previous["tool_name"] != tool_name:
@@ -28,6 +34,21 @@ class IdempotentToolExecutor:
     @staticmethod
     def _ctx(execution_context: dict[str, Any] | None, key: str) -> Any:
         return (execution_context or {}).get(key)
+
+    @classmethod
+    def _public_parameters_for_validation(
+        cls,
+        parameters: dict[str, Any],
+        domain: str,
+    ) -> dict[str, Any]:
+        allowed_internal = cls._INTERNAL_PARAMETER_KEYS.get(domain, set())
+        supplied_internal = {key for key in parameters if key.startswith("_")}
+        unexpected = supplied_internal - allowed_internal
+        if unexpected:
+            raise ToolParametersValidationError(
+                "Parameter internal tidak dikenal: " + ", ".join(sorted(unexpected))
+            )
+        return {key: value for key, value in parameters.items() if key not in allowed_internal}
 
     async def _journal(self, *, execution_id: str, idempotency_key: str | None, tool_name: str, parameters: dict[str, Any], classification: str, capability: str, policy_decision: str, status: str, side_effect: bool, retry_safe: bool, execution_context: dict[str, Any] | None, approval_id: str | None = None, result: Any = None, error: str | None = None, provenance: dict[str, Any] | None = None, finished: bool = False) -> None:
         await db.execute("""INSERT INTO tool_executions (execution_id, idempotency_key, group_id, thread_id, task_id, role_id, tool_name, parameters_json, classification, capability, policy_decision, approval_id, status, result_json, error_text, retry_count, side_effect, retry_safe, provenance_json, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)""", (execution_id, idempotency_key, self._ctx(execution_context, "group_id"), self._ctx(execution_context, "thread_id"), self._ctx(execution_context, "task_id"), self._ctx(execution_context, "role_id"), tool_name, json.dumps(parameters, sort_keys=True, ensure_ascii=False, default=str), classification, capability, policy_decision, approval_id, status, json.dumps(result, ensure_ascii=False, default=str) if result is not None else None, error, int(side_effect), int(retry_safe), json.dumps(provenance, ensure_ascii=False, default=str) if provenance else None, int(finished)))
@@ -63,6 +84,24 @@ class IdempotentToolExecutor:
         if classification == "unknown":
             await self._journal(execution_id=execution_id, idempotency_key=idempotency_key, tool_name=tool_name, parameters=parameters, classification=classification, capability=capability, policy_decision="deny_unclassified", status="denied", side_effect=side_effect, retry_safe=False, execution_context=execution_context, approval_id=approval_id, error="TOOL_POLICY_UNCLASSIFIED", finished=True)
             return {"success": False, "error": "TOOL_POLICY_UNCLASSIFIED", "tool": tool_name, "execution_id": execution_id}
+
+        if registered is not None:
+            try:
+                public_parameters = self._public_parameters_for_validation(
+                    parameters,
+                    registered.domain,
+                )
+                validate_tool_parameters(public_parameters, registered.parameters)
+            except ToolParametersValidationError as exc:
+                error = f"TOOL_PARAMETERS_INVALID: {exc}"
+                await self._journal(execution_id=execution_id, idempotency_key=idempotency_key, tool_name=tool_name, parameters=parameters, classification=classification, capability=capability, policy_decision="deny_invalid_parameters", status="denied", side_effect=side_effect, retry_safe=False, execution_context=execution_context, approval_id=approval_id, error=error, finished=True)
+                return {
+                    "success": False,
+                    "error": "TOOL_PARAMETERS_INVALID",
+                    "detail": str(exc),
+                    "tool": tool_name,
+                    "execution_id": execution_id,
+                }
 
         external = classification == "external"
         if external and not is_approved:

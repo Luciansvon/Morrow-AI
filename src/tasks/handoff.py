@@ -40,6 +40,20 @@ class TaskHandoffService:
                 )
 
             cursor = await conn.execute(
+                """SELECT d.depends_on_task_id, t.status
+                   FROM task_dependencies d
+                   LEFT JOIN tasks t ON t.id=d.depends_on_task_id
+                   WHERE d.task_id=? AND (t.status IS NULL OR t.status!='done')""",
+                (task_id,),
+            )
+            incomplete = [str(row["depends_on_task_id"]) for row in await cursor.fetchall()]
+            if incomplete:
+                return False, (
+                    "Task belum boleh di-handoff ke eksekusi karena dependency belum selesai: "
+                    + ", ".join(incomplete)
+                )
+
+            cursor = await conn.execute(
                 "SELECT from_role, to_role FROM task_handoffs WHERE task_id=?",
                 (task_id,),
             )
@@ -71,11 +85,12 @@ class TaskHandoffService:
             updated = await conn.execute(
                 """UPDATE tasks
                    SET current_owner=?, status='in_progress', updated_at=CURRENT_TIMESTAMP
-                   WHERE id=? AND current_owner=?""",
+                   WHERE id=? AND current_owner=?
+                     AND status NOT IN ('done','failed','cancelled')""",
                 (to_role.value, task_id, from_role.value),
             )
             if updated.rowcount != 1:
-                raise RuntimeError("Task ownership berubah saat handoff berlangsung.")
+                raise RuntimeError("Task ownership/status berubah saat handoff berlangsung.")
         return True, f"Tugas berhasil didelegasikan dari {from_role.value} ke {to_role.value}."
 
 

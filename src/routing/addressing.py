@@ -17,6 +17,7 @@ class AddressingDetector:
     """Bedakan explicit agent address, collective vocative, dan object quantifier."""
 
     COLLECTIVE_VOCATIVE_PATTERNS: ClassVar[list[str]] = [
+        r"^@(semua|semuanya|tim|team)\b",
         (
             r"^(halo|hai|hey|hei|pagi|siang|sore|malam|selamat\s+\w+)\s+"
             r"(semua|semuanya|tim|team|guys|teman-teman|kalian)\b"
