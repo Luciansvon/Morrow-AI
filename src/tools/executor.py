@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from src.storage.sqlite import db
 from src.tools.policy import tool_policy
@@ -16,7 +16,7 @@ class UnknownExternalResultError(RuntimeError):
 
 
 class IdempotentToolExecutor:
-    _INTERNAL_PARAMETER_KEYS: dict[str, set[str]] = {
+    _INTERNAL_PARAMETER_KEYS: ClassVar[dict[str, set[str]]] = {
         "browser": {"_task_space", "_state_hash"},
         "meta": {"_role"},
     }
