@@ -33,10 +33,14 @@ class MarkdownMemoryVault:
         group_id: str,
         scope: MemoryScope,
         role_id: RoleID | None,
+        user_id: str | None = None,
     ) -> Path:
         group_dir = Path(settings.memory_vault_dir) / cls._safe_component(group_id)
         if scope == MemoryScope.SHARED:
             return group_dir / "shared.md"
+        if scope == MemoryScope.USER:
+            assert user_id is not None
+            return group_dir / "users" / f"{cls._safe_component(user_id)}.md"
         assert role_id is not None
         return group_dir / "roles" / f"{role_id.value}.md"
 
@@ -45,9 +49,16 @@ class MarkdownMemoryVault:
         group_id: str,
         scope: MemoryScope,
         role_id: RoleID | None,
+        user_id: str | None,
         rows: list[dict[str, str]],
     ) -> str:
-        title = "Shared Memory" if scope == MemoryScope.SHARED else f"{role_id.value.title()} Memory"
+        if scope == MemoryScope.SHARED:
+            title = "Shared Memory"
+        elif scope == MemoryScope.USER:
+            title = "User Memory"
+        else:
+            assert role_id is not None
+            title = f"{role_id.value.title()} Memory"
         lines = [
             f"# Morrow {title}",
             "",
@@ -57,6 +68,8 @@ class MarkdownMemoryVault:
         ]
         if role_id:
             lines.append(f"- role: `{role_id.value}`")
+        if user_id:
+            lines.append(f"- user: `{user_id}`")
         lines.append("")
         for row in rows:
             lines.extend(
@@ -86,16 +99,28 @@ class MarkdownMemoryVault:
         group_id: str,
         scope: MemoryScope,
         role_id: RoleID | None = None,
+        user_id: str | None = None,
     ) -> Path:
-        if scope == MemoryScope.ROLE and role_id is None:
-            raise ValueError("role_id wajib untuk role memory vault")
-        if scope == MemoryScope.SHARED and role_id is not None:
-            raise ValueError("shared memory vault tidak menerima role_id")
+        if scope == MemoryScope.ROLE:
+            if role_id is None or user_id is not None:
+                raise ValueError("role memory vault membutuhkan role_id tanpa user_id")
+        elif scope == MemoryScope.USER:
+            if not user_id or role_id is not None:
+                raise ValueError("user memory vault membutuhkan user_id tanpa role_id")
+        elif role_id is not None or user_id is not None:
+            raise ValueError("shared memory vault tidak menerima role_id/user_id")
+
         if scope == MemoryScope.SHARED:
             rows = await db.fetch_all(
                 """SELECT key, value, memory_type, updated_at FROM memories
                    WHERE group_id=? AND scope='shared' ORDER BY key""",
                 (group_id,),
+            )
+        elif scope == MemoryScope.USER:
+            rows = await db.fetch_all(
+                """SELECT key, value, memory_type, updated_at FROM memories
+                   WHERE group_id=? AND scope='user' AND user_id=? ORDER BY key""",
+                (group_id, user_id),
             )
         else:
             rows = await db.fetch_all(
@@ -103,20 +128,21 @@ class MarkdownMemoryVault:
                    WHERE group_id=? AND scope='role' AND role_id=? ORDER BY key""",
                 (group_id, role_id.value),
             )
-        path = self._target_path(group_id, scope, role_id)
-        content = self._render(group_id, scope, role_id, rows)
+        path = self._target_path(group_id, scope, role_id, user_id)
+        content = self._render(group_id, scope, role_id, user_id, rows)
         await asyncio.to_thread(self._atomic_write, path, content)
         return path
 
     async def sync_all(self) -> int:
         rows = await db.fetch_all(
-            "SELECT DISTINCT group_id, scope, role_id FROM memories ORDER BY group_id, scope, role_id"
+            """SELECT DISTINCT group_id, scope, role_id, user_id
+               FROM memories ORDER BY group_id, scope, role_id, user_id"""
         )
         count = 0
         for row in rows:
             scope = MemoryScope(row["scope"])
             role = RoleID(row["role_id"]) if row["role_id"] else None
-            await self.sync_scope(row["group_id"], scope, role)
+            await self.sync_scope(row["group_id"], scope, role, row.get("user_id"))
             count += 1
         return count
 
