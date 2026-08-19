@@ -3,6 +3,7 @@
 import uuid
 from typing import Any
 
+from src.core.request_context import current_user_id
 from src.core.types import MemoryItem, MemoryScope, MemoryType, RoleID
 from src.memory.retriever import hybrid_memory_retriever
 from src.memory.vault import memory_vault
@@ -164,12 +165,13 @@ class MemoryService:
         limit: int | None = None,
         user_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        effective_user_id = user_id or current_user_id()
         return await hybrid_memory_retriever.retrieve(
             query,
             group_id,
             role,
             limit,
-            user_id=user_id,
+            user_id=effective_user_id,
         )
 
     @staticmethod
