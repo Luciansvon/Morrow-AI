@@ -191,7 +191,7 @@ class ImmichClient:
         asset_id = self._validate_asset_id(asset_id)
         payload = await self._request("GET", f"/assets/{asset_id}")
         if not isinstance(payload, dict):
-            raise ValueError("Respons asset Immich tidak valid.")
+            raise TypeError("Respons asset Immich tidak valid.")
         return payload
 
     async def get_asset_metadata(self, asset_id: str) -> Any:
